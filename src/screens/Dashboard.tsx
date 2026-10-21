@@ -2,6 +2,7 @@ import { useCareerStore } from '../store/careerStore';
 import { Crest } from '../components/Layout';
 import { formatDate, formatShort } from '../game/dates';
 import { POSITION_LABEL } from '../game/positions';
+import { isSeasonComplete } from '../game/season';
 import type { NavKey } from '../components/Layout';
 import type { PlayerSeasonStats } from '../game/types';
 
@@ -17,6 +18,7 @@ export default function Dashboard({ onNavigate }: Props) {
   const next = useCareerStore((s) => s.nextFixture());
   const advanceOneDay = useCareerStore((s) => s.advanceOneDay);
   const advanceToNextMatch = useCareerStore((s) => s.advanceToNextMatch);
+  const finaliseSeason = useCareerStore((s) => s.finaliseSeason);
   const loading = useCareerStore((s) => s.loading);
 
   if (!save || !user || !club || !league) {
@@ -30,7 +32,6 @@ export default function Dashboard({ onNavigate }: Props) {
     (s) => s.season === save.currentSeason && s.clubId === club.id,
   );
 
-  // Next fixture opponent
   let opponentClub = null;
   let isHome = false;
   if (next) {
@@ -39,7 +40,6 @@ export default function Dashboard({ onNavigate }: Props) {
     opponentClub = save.clubs.find((c) => c.id === oppId) ?? null;
   }
 
-  // Recent match reports involving the user's club
   const recentReports = save.matchReports
     .filter(
       (r) => r.homeClubId === club.id || r.awayClubId === club.id,
@@ -57,9 +57,27 @@ export default function Dashboard({ onNavigate }: Props) {
       )
     : null;
 
+  const seasonComplete = isSeasonComplete(save);
+
   return (
     <div className="space-y-4">
-      {/* Player header */}
+      {seasonComplete && (
+        <div className="panel p-4 border-accent/50">
+          <div className="label text-accent-soft">Season complete</div>
+          <p className="text-sm text-txt mt-2">
+            Your {save.currentSeason} season is finished. Finalise the season to see
+            awards, promotions, and start the next campaign.
+          </p>
+          <button
+            className="btn btn-primary mt-3"
+            onClick={() => finaliseSeason()}
+            disabled={loading}
+          >
+            {loading ? 'Finalising…' : 'Finalise season →'}
+          </button>
+        </div>
+      )}
+
       <div className="panel p-4 md:p-5">
         <div className="flex items-start gap-4 flex-wrap">
           <PlayerAvatar player={user} club={club} />
@@ -94,7 +112,6 @@ export default function Dashboard({ onNavigate }: Props) {
           </div>
         </div>
 
-        {/* Condition bars */}
         <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
           <ConditionBar label="Fitness" value={user.fitness} color="text-state-win" />
           <ConditionBar label="Fatigue" value={user.fatigue} color="text-state-loss" inverted />
@@ -111,7 +128,6 @@ export default function Dashboard({ onNavigate }: Props) {
         )}
       </div>
 
-      {/* Contract + finance row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MiniStat label="Weekly wage" value={`£${user.contract.weeklyWage.toLocaleString()}`} />
         <MiniStat label="Contract until" value={user.contract.endDate.slice(0, 7)} />
@@ -119,9 +135,7 @@ export default function Dashboard({ onNavigate }: Props) {
         <MiniStat label="Form" value={formatForm(user.form)} />
       </div>
 
-      {/* Two-column: next fixture + league position */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Next fixture */}
         <div className="panel p-4">
           <div className="label mb-2">Next fixture</div>
           {next && opponentClub ? (
@@ -152,11 +166,12 @@ export default function Dashboard({ onNavigate }: Props) {
               </div>
             </>
           ) : (
-            <div className="text-sm text-txt-muted">Season complete.</div>
+            <div className="text-sm text-txt-muted">
+              {seasonComplete ? 'Season finished.' : 'Season complete.'}
+            </div>
           )}
         </div>
 
-        {/* League position */}
         <div className="panel p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="label">League position</div>
@@ -205,7 +220,6 @@ export default function Dashboard({ onNavigate }: Props) {
         </div>
       </div>
 
-      {/* Season stats + recent results */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="panel p-4">
           <div className="flex items-center justify-between mb-3">
@@ -281,7 +295,6 @@ export default function Dashboard({ onNavigate }: Props) {
         </div>
       </div>
 
-      {/* Training status */}
       <div className="panel p-4 flex items-center justify-between gap-3 flex-wrap">
         <div>
           <div className="label">Training</div>
@@ -296,7 +309,6 @@ export default function Dashboard({ onNavigate }: Props) {
         </button>
       </div>
 
-      {/* Actions */}
       <div className="flex gap-2 flex-wrap">
         <button
           className="btn flex-1 md:flex-none"
