@@ -1003,9 +1003,8 @@ function buildReport(
   playedDate: string,
   competition: string,
 ): MatchReport {
-  // Calculate possession share from passes
-  const totalPasses = state.home.stats.passesAttempted + state.away.stats.passesAttempted || 1;
-  state.home.stats.possession = Math.round((state.home.stats.passesAttempted / totalPasses) * 100);
+  const totalPasses = state.home.stats.passes + state.away.stats.passes || 1;
+  state.home.stats.possession = Math.round((state.home.stats.passes / totalPasses) * 100);
   state.away.stats.possession = 100 - state.home.stats.possession;
 
   // Finalise minutes played for starters
