@@ -294,6 +294,23 @@ export interface MatchReport {
   competition: string;
 }
 
+// Add this near the other interfaces
+export interface Email {
+  id: string;
+  date: string;
+  sender: string;
+  subject: string;
+  body: string;
+  read: boolean;
+  type: 'Manager' | 'Agent' | 'Transfer' | 'News';
+}
+
+export interface CareerSave {
+  // ... existing fields ...
+  newsFeed: NewsItem[];
+  emails: Email[];
+  // ...
+}
 // ============================================================
 // TRAINING
 // ============================================================
