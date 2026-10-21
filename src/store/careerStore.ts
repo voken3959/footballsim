@@ -16,6 +16,7 @@ import { generateAttributes, generatePotential } from '../game/attributes';
 import { computeOverall } from '../game/positions';
 import { advanceDay as leagueAdvanceDay, advanceToNextMatch as leagueAdvanceToNextMatch } from '../game/league';
 import { previewTraining, applyTraining } from '../game/training';
+import { finaliseSeason, isSeasonComplete, SeasonSummary } from '../game/season';
 
 // ------------------------------------------------------------
 // CONSTANTS
@@ -57,10 +58,6 @@ function getDB(): Promise<IDBPDatabase<CareerDB>> {
 // STARTING CLUB OFFERS
 // ------------------------------------------------------------
 
-/**
- * Given a freshly generated player and a pathway, find clubs likely
- * to offer a contract. Returns up to 5 club IDs, best first.
- */
 export function generateStartingOffers(
   world: WorldData,
   player: Player,
@@ -72,7 +69,6 @@ export function generateStartingOffers(
     return [customClubId];
   }
 
-  // Preferred tiers by overall (lower = better club, higher = weaker)
   const overall = player.overall;
   let tierPrefs: number[];
   if (overall >= 68) tierPrefs = [2, 3, 1];
@@ -80,10 +76,7 @@ export function generateStartingOffers(
   else if (overall >= 55) tierPrefs = [4, 3];
   else tierPrefs = [4];
 
-  // Youth pathway: shift one tier down (more prestigious clubs take
-  // teenagers into their academy even if they're not ready)
   if (pathway === 'Youth') tierPrefs = tierPrefs.map((t) => Math.min(4, t + 1));
-  // Established: shift up
   if (pathway === 'Established') tierPrefs = tierPrefs.map((t) => Math.max(1, t - 1));
 
   const candidates: { clubId: string; score: number }[] = [];
@@ -91,7 +84,6 @@ export function generateStartingOffers(
     const league = world.leagues.find((l) => l.tier === tier);
     if (!league) continue;
     for (const club of world.clubs.filter((c) => c.leagueId === league.id)) {
-      // A club's ideal player rating ≈ 35 + reputation * 0.55
       const idealRating = 35 + club.reputation * 0.55;
       const diff = Math.abs(idealRating - player.overall);
       if (diff < 18) {
@@ -137,7 +129,6 @@ function buildUserPlayer(
   const overall = computeOverall(attributes, creation.primaryPosition);
   const potential = generatePotential(rng, overall, creation.age, startingClub.youthFacilities);
 
-  // Contract: youth players get low wages
   const wage = creation.pathway === 'Youth'
     ? 600
     : Math.round(
@@ -203,29 +194,27 @@ function buildUserPlayer(
 // ------------------------------------------------------------
 
 interface CareerStore {
-  // Data
   save: CareerSave | null;
   loading: boolean;
   error: string | null;
 
-  // Ephemeral results for the UI
   lastMatchReport: MatchReport | null;
   lastTrainingDeltas: { key: string; from: number; to: number }[] | null;
   lastAdvanceNews: { headline: string; body: string }[];
   lastWagePaid: number;
+  lastSeasonSummary: SeasonSummary | null;
 
-  // Actions
   newCareer: (creation: CareerCreation, startingClubId: string, seed?: number) => Promise<void>;
   advanceOneDay: () => Promise<void>;
   advanceToNextMatch: () => Promise<void>;
   setTrainingPlan: (focus: TrainingFocus, intensity: TrainingIntensity) => void;
+  finaliseSeason: () => Promise<SeasonSummary | null>;
   saveCareer: () => Promise<void>;
   loadCareer: (id: string) => Promise<void>;
   listCareers: () => Promise<CareerSave[]>;
   deleteCareer: (id: string) => Promise<void>;
   clearResults: () => void;
 
-  // Selectors
   userPlayer: () => Player | null;
   userClub: () => Club | null;
   userLeague: () => League | null;
@@ -244,34 +233,27 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
   lastTrainingDeltas: null,
   lastAdvanceNews: [],
   lastWagePaid: 0,
+  lastSeasonSummary: null,
 
-  // ----------------------------------------------------------
-  // NEW CAREER
-  // ----------------------------------------------------------
   newCareer: async (creation, startingClubId, seed) => {
     set({ loading: true, error: null });
     try {
       const rngSeed = seed ?? Math.floor(Math.random() * 1_000_000_000);
       const rng = new RNG(rngSeed);
 
-      // 1. Generate world
       const world = generateWorld(rng, START_DATE);
 
-      // 2. Generate fixtures for every league
       const fixtures: Fixture[] = [];
       for (const league of world.leagues) {
         fixtures.push(...generateLeagueFixtures(league, START_DATE, rng));
       }
 
-      // 3. Build user player
       const startingClub = world.clubs.find((c) => c.id === startingClubId);
       if (!startingClub) throw new Error(`Club ${startingClubId} not found`);
       const userPlayer = buildUserPlayer(creation, startingClub, rng);
 
-      // 4. Add to world roster
       world.players.push(userPlayer);
 
-      // 5. Build save
       const save: CareerSave = {
         schemaVersion: SCHEMA_VERSION,
         id: `career_${Date.now()}_${rngSeed}`,
@@ -308,7 +290,6 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
         trainingPlan: { focus: 'PositionSpecific', intensity: 'Normal' },
       };
 
-      // 6. Persist
       const db = await getDB();
       await db.put(STORE_NAME, save);
 
@@ -318,9 +299,6 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
     }
   },
 
-  // ----------------------------------------------------------
-  // ADVANCE ONE DAY
-  // ----------------------------------------------------------
   advanceOneDay: async () => {
     const save = get().save;
     if (!save) return;
@@ -330,7 +308,6 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
       const userPlayer = save.players.find((p) => p.id === save.userPlayerId);
       if (!userPlayer) throw new Error('User player missing');
 
-      // Is tomorrow a match day for the user?
       const nextDate = addDays(save.currentDate, 1);
       const hasMatchTomorrow = save.fixtures.some(
         (f) =>
@@ -342,7 +319,6 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
       let workingSave = save;
       let trainingDeltas: { key: string; from: number; to: number }[] = [];
 
-      // Apply today's training (before advancing to tomorrow) if no match tomorrow
       if (!hasMatchTomorrow && save.trainingPlan) {
         const club = save.clubs.find((c) => c.id === userPlayer.clubId);
         if (club) {
@@ -365,10 +341,8 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
         }
       }
 
-      // Advance the league
       const result = leagueAdvanceDay(workingSave, save.userPlayerId);
 
-      // Persist
       const db = await getDB();
       await db.put(STORE_NAME, result.state);
 
@@ -385,18 +359,12 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
     }
   },
 
-  // ----------------------------------------------------------
-  // ADVANCE TO NEXT MATCH
-  // ----------------------------------------------------------
   advanceToNextMatch: async () => {
     const save = get().save;
     if (!save) return;
     set({ loading: true, error: null });
 
     try {
-      // Loop: advance single days until the NEXT day would be a match,
-      // applying training each day. This reuses advanceOneDay's logic
-      // but without the async store round-trips for each step.
       const userPlayer = save.players.find((p) => p.id === save.userPlayerId);
       if (!userPlayer) throw new Error('User player missing');
 
@@ -414,7 +382,6 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
         );
         if (hasMatch) break;
 
-        // Apply training for the day being advanced
         const userNow = current.players.find((p) => p.id === current.userPlayerId);
         if (userNow && current.trainingPlan) {
           const club = current.clubs.find((c) => c.id === userNow.clubId);
@@ -451,9 +418,6 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
     }
   },
 
-  // ----------------------------------------------------------
-  // SET TRAINING PLAN
-  // ----------------------------------------------------------
   setTrainingPlan: (focus, intensity) => {
     const save = get().save;
     if (!save) return;
@@ -463,13 +427,33 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
       updatedAt: new Date().toISOString(),
     };
     set({ save: updated });
-    // Persist lazily — will be saved on next advance
     getDB().then((db) => db.put(STORE_NAME, updated)).catch(() => {});
   },
 
-  // ----------------------------------------------------------
-  // SAVE / LOAD / LIST / DELETE
-  // ----------------------------------------------------------
+  finaliseSeason: async () => {
+    const save = get().save;
+    if (!save) return null;
+    if (!isSeasonComplete(save)) return null;
+
+    set({ loading: true });
+    try {
+      const result = finaliseSeason(save);
+      const db = await getDB();
+      await db.put(STORE_NAME, result.state);
+      set({
+        save: result.state,
+        lastSeasonSummary: result.summary,
+        lastMatchReport: null,
+        lastTrainingDeltas: null,
+        loading: false,
+      });
+      return result.summary;
+    } catch (e: any) {
+      set({ loading: false, error: e.message ?? String(e) });
+      return null;
+    }
+  },
+
   saveCareer: async () => {
     const save = get().save;
     if (!save) return;
@@ -505,9 +489,6 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
 
   clearResults: () => set({ lastMatchReport: null, lastTrainingDeltas: null }),
 
-  // ----------------------------------------------------------
-  // SELECTORS
-  // ----------------------------------------------------------
   userPlayer: () => {
     const save = get().save;
     if (!save) return null;
