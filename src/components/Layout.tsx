@@ -4,7 +4,7 @@ import { formatDate } from '../game/dates';
 
 export type NavKey =
   | 'dashboard' | 'squad' | 'training' | 'match'
-  | 'league' | 'profile' | 'mail' | 'load' | 'settings'; // Added 'mail'
+  | 'league' | 'profile' | 'mail' | 'stats' | 'load' | 'settings';
 
 interface NavItem {
   key: NavKey;
@@ -18,8 +18,9 @@ const NAV: NavItem[] = [
   { key: 'squad', label: 'Club', icon: 'shield' },
   { key: 'training', label: 'Training', icon: 'dumbbell' },
   { key: 'league', label: 'League', icon: 'table' },
+  { key: 'stats', label: 'Stats DB', icon: 'chart' },
   { key: 'profile', label: 'Player', icon: 'user' },
-  { key: 'mail', label: 'Inbox', icon: 'mail' }, // Added Mail
+  { key: 'mail', label: 'Inbox', icon: 'mail' },
   { key: 'load', label: 'Saves', icon: 'save' },
 ];
 
@@ -98,7 +99,7 @@ export default function Layout({ active, onNavigate, children }: Props) {
 
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t border-bg-border bg-bg-panel/95 backdrop-blur flex justify-around z-20">
-        {NAV.filter(i => ['dashboard', 'match', 'training', 'mail', 'profile'].includes(i.key)).map((item) => (
+        {NAV.filter(i => ['dashboard', 'match', 'stats', 'mail', 'profile'].includes(i.key)).map((item) => (
           <button
             key={item.key}
             onClick={() => onNavigate(item.key)}
@@ -130,6 +131,7 @@ function Icon({ name }: { name: string }) {
     user: 'M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-8 9a8 8 0 0 1 16 0H4Z',
     save: 'M5 3h12l4 4v14H3V3h2Zm2 2v6h10V5H7Zm0 10v6h10v-6H7Z',
     mail: 'M2 5h20v14H2V5Zm2.4 2L12 12.6 19.6 7H4.4ZM4 9.5V17h16V9.5l-8 5.5-8-5.5Z',
+    chart: 'M4 20h16v2H4v-2Zm2-8h3v6H6v-6Zm5-6h3v12h-3V6Zm5 4h3v8h-3v-8Z',
   };
   const d = paths[name] ?? paths.home;
   return (
