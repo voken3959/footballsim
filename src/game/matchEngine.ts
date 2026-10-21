@@ -424,6 +424,7 @@ function resolvePass(
   successChance = clamp(successChance, 0.2, 0.95);
 
   // Track pass attempt
+  attacking.stats.passes++;
   const carrierStats = getPlayerStats(attacking, carrier);
   if (carrierStats) carrierStats.passesAttempted++;
 
