@@ -80,15 +80,20 @@ export function generateStartingOffers(
   if (pathway === 'Established') tierPrefs = tierPrefs.map((t) => Math.max(1, t - 1));
 
   const candidates: { clubId: string; score: number }[] = [];
+  const seen = new Set<string>();
+
   for (const tier of tierPrefs) {
     const league = world.leagues.find((l) => l.tier === tier);
     if (!league) continue;
     for (const club of world.clubs.filter((c) => c.leagueId === league.id)) {
+      if (seen.has(club.id)) continue; // Prevent duplicates
+      
       const idealRating = 35 + club.reputation * 0.55;
       const diff = Math.abs(idealRating - player.overall);
       if (diff < 18) {
         const score = 100 - diff * 4 + rng.next() * 15;
         candidates.push({ clubId: club.id, score });
+        seen.add(club.id);
       }
     }
   }
