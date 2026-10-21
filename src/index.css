@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-bg text-txt font-sans antialiased;
+  background-image:
+    radial-gradient(1200px 800px at 80% -20%, rgba(31,157,107,0.08), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(31,157,107,0.05), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #232b33; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #2f3944; }
+
+/* Reusable component classes */
+@layer components {
+  .panel {
+    @apply bg-bg-panel border border-bg-border rounded-lg;
+  }
+  .panel-card {
+    @apply bg-bg-card border border-bg-border rounded-lg;
+  }
+  .label {
+    @apply text-[11px] uppercase tracking-wider text-txt-dim font-semibold;
+  }
+  .value {
+    @apply text-txt font-semibold;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium
+           border border-bg-border bg-bg-card text-txt hover:bg-[#1a222a] transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply bg-accent hover:bg-accent-soft text-white border-transparent;
+  }
+  .btn-ghost {
+    @apply bg-transparent border-transparent hover:bg-bg-card;
+  }
+  .stat {
+    @apply flex flex-col gap-0.5;
+  }
+  .stat-label {
+    @apply text-[10px] uppercase tracking-wider text-txt-dim;
+  }
+  .stat-value {
+    @apply text-base font-semibold text-txt;
+  }
+  .pill {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold;
+  }
+  .divider {
+    @apply h-px bg-bg-border;
+  }
+  .input {
+    @apply w-full px-3 py-2 rounded-md bg-bg-card border border-bg-border text-txt
+           placeholder:text-txt-dim focus:outline-none focus:border-accent;
+  }
+  .select {
+    @apply w-full px-3 py-2 rounded-md bg-bg-card border border-bg-border text-txt
+           focus:outline-none focus:border-accent;
+  }
+}
