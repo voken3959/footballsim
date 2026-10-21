@@ -27,6 +27,8 @@ export default function ProfileScreen() {
   const save = useCareerStore((s) => s.save)!;
   const user = useCareerStore((s) => s.userPlayer())!;
   const club = useCareerStore((s) => s.userClub())!;
+  
+  const currentStats = user.seasonStats.find(s => s.season === save.currentSeason);
 
   return (
     <div className="space-y-4">
@@ -59,10 +61,47 @@ export default function ProfileScreen() {
         </div>
       </div>
 
+      {/* Current Season Deep Stats */}
+      {currentStats && (
+        <div className="panel p-4">
+          <div className="label mb-3">Season {save.currentSeason} Performance</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+            <div>
+              <div className="text-2xl font-black text-txt tabular-nums">{currentStats.appearances}</div>
+              <div className="text-[10px] uppercase tracking-wider text-txt-dim mt-0.5">Apps</div>
+            </div>
+            <div>
+              <div className="text-2xl font-black text-txt tabular-nums">{currentStats.goals}</div>
+              <div className="text-[10px] uppercase tracking-wider text-txt-dim mt-0.5">Goals</div>
+            </div>
+            <div>
+              <div className="text-2xl font-black text-txt tabular-nums">{currentStats.assists}</div>
+              <div className="text-[10px] uppercase tracking-wider text-txt-dim mt-0.5">Assists</div>
+            </div>
+            <div>
+              <div className="text-2xl font-black text-accent-soft tabular-nums">{currentStats.averageRating.toFixed(2)}</div>
+              <div className="text-[10px] uppercase tracking-wider text-txt-dim mt-0.5">Avg Rating</div>
+            </div>
+          </div>
+          
+          <div className="mt-4 pt-4 border-t border-bg-border grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-txt-muted">Minutes</span> <span className="font-semibold tabular-nums">{currentStats.minutesPlayed}</span></div>
+            <div className="flex justify-between"><span className="text-txt-muted">Passes</span> <span className="font-semibold tabular-nums">{currentStats.passesCompleted}/{currentStats.passesAttempted}</span></div>
+            <div className="flex justify-between"><span className="text-txt-muted">Key Passes</span> <span className="font-semibold tabular-nums">{currentStats.keyPasses}</span></div>
+            <div className="flex justify-between"><span className="text-txt-muted">Shots</span> <span className="font-semibold tabular-nums">{currentStats.shots}</span></div>
+            <div className="flex justify-between"><span className="text-txt-muted">Tackles</span> <span className="font-semibold tabular-nums">{currentStats.tackles}</span></div>
+            <div className="flex justify-between"><span className="text-txt-muted">Intercepts</span> <span className="font-semibold tabular-nums">{currentStats.interceptions}</span></div>
+            <div className="flex justify-between"><span className="text-txt-muted">Dribbles</span> <span className="font-semibold tabular-nums">{currentStats.dribblesCompleted}</span></div>
+            <div className="flex justify-between"><span className="text-txt-muted">Saves</span> <span className="font-semibold tabular-nums">{currentStats.saves}</span></div>
+          </div>
+        </div>
+      )}
+
+      {/* Attribute groups */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <AttributeGroup title="Technical" attrs={TECH_ATTRS} attributes={user.attributes.technical as unknown as Record<string, number>} />
-        <AttributeGroup title="Physical" attrs={PHYS_ATTRS} attributes={user.attributes.physical as unknown as Record<string, number>} />
-        <AttributeGroup title="Mental" attrs={MENT_ATTRS} attributes={user.attributes.mental as unknown as Record<string, number>} />
+        <AttributeGroup title="Technical" attrs={TECH_ATTRS} attributes={user.attributes.technical as any} />
+        <AttributeGroup title="Physical" attrs={PHYS_ATTRS} attributes={user.attributes.physical as any} />
+        <AttributeGroup title="Mental" attrs={MENT_ATTRS} attributes={user.attributes.mental as any} />
       </div>
 
       {/* Season history */}
