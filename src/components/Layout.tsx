@@ -4,12 +4,12 @@ import { formatDate } from '../game/dates';
 
 export type NavKey =
   | 'dashboard' | 'squad' | 'training' | 'match'
-  | 'league' | 'profile' | 'load' | 'settings';
+  | 'league' | 'profile' | 'mail' | 'load' | 'settings'; // Added 'mail'
 
 interface NavItem {
   key: NavKey;
   label: string;
-  icon: string; // simple SVG path id
+  icon: string;
 }
 
 const NAV: NavItem[] = [
@@ -19,6 +19,7 @@ const NAV: NavItem[] = [
   { key: 'training', label: 'Training', icon: 'dumbbell' },
   { key: 'league', label: 'League', icon: 'table' },
   { key: 'profile', label: 'Player', icon: 'user' },
+  { key: 'mail', label: 'Inbox', icon: 'mail' }, // Added Mail
   { key: 'load', label: 'Saves', icon: 'save' },
 ];
 
@@ -33,9 +34,11 @@ export default function Layout({ active, onNavigate, children }: Props) {
   const club = useCareerStore((s) => s.userClub());
   const save = useCareerStore((s) => s.save);
 
+  const unreadCount = save && save.emails ? save.emails.filter(e => !e.read).length : 0;
+
   return (
     <div className="min-h-full flex flex-col md:flex-row">
-      {/* Sidebar (desktop) */}
+      {/* Sidebar */}
       <aside className="hidden md:flex md:flex-col md:w-56 border-r border-bg-border bg-bg-panel/60 backdrop-blur shrink-0">
         <div className="p-4 border-b border-bg-border">
           <div className="flex items-center gap-2.5">
@@ -55,14 +58,19 @@ export default function Layout({ active, onNavigate, children }: Props) {
             <button
               key={item.key}
               onClick={() => onNavigate(item.key)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm mb-0.5 transition-colors text-left ${
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm mb-0.5 transition-colors text-left relative ${
                 active === item.key
                   ? 'bg-accent/15 text-txt border border-accent/30'
                   : 'text-txt-muted hover:text-txt hover:bg-bg-card border border-transparent'
               }`}
             >
               <Icon name={item.icon} />
-              <span>{item.label}</span>
+              <span className="flex-1">{item.label}</span>
+              {item.key === 'mail' && unreadCount > 0 && (
+                <span className="bg-state-loss text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  {unreadCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -90,26 +98,27 @@ export default function Layout({ active, onNavigate, children }: Props) {
 
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 border-t border-bg-border bg-bg-panel/95 backdrop-blur flex justify-around z-20">
-        {NAV.slice(0, 5).map((item) => (
+        {NAV.filter(i => ['dashboard', 'match', 'training', 'mail', 'profile'].includes(i.key)).map((item) => (
           <button
             key={item.key}
             onClick={() => onNavigate(item.key)}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 text-[10px] ${
+            className={`flex-1 flex flex-col items-center gap-1 py-2 text-[10px] relative ${
               active === item.key ? 'text-accent-soft' : 'text-txt-muted'
             }`}
           >
             <Icon name={item.icon} />
             <span>{item.label}</span>
+            {item.key === 'mail' && unreadCount > 0 && (
+              <span className="absolute top-1 right-1/4 bg-state-loss text-white text-[9px] font-bold px-1 rounded-full">
+                {unreadCount}
+              </span>
+            )}
           </button>
         ))}
       </nav>
     </div>
   );
 }
-
-// ------------------------------------------------------------
-// SVG ICONS (inline, no dependency)
-// ------------------------------------------------------------
 
 function Icon({ name }: { name: string }) {
   const paths: Record<string, string> = {
@@ -120,39 +129,22 @@ function Icon({ name }: { name: string }) {
     table: 'M3 5h18v3H3V5Zm0 5h18v3H3v-3Zm0 5h18v3H3v-3Z',
     user: 'M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm-8 9a8 8 0 0 1 16 0H4Z',
     save: 'M5 3h12l4 4v14H3V3h2Zm2 2v6h10V5H7Zm0 10v6h10v-6H7Z',
+    mail: 'M2 5h20v14H2V5Zm2.4 2L12 12.6 19.6 7H4.4ZM4 9.5V17h16V9.5l-8 5.5-8-5.5Z',
   };
   const d = paths[name] ?? paths.home;
   return (
-    <svg
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      fill="currentColor"
-      className="shrink-0"
-      aria-hidden
-    >
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" className="shrink-0" aria-hidden>
       <path d={d} />
     </svg>
   );
 }
 
-// ------------------------------------------------------------
-// CLUB CREST (pure CSS, no image dependency)
-// ------------------------------------------------------------
-
-export function Crest({
-  club,
-  size = 32,
-}: {
-  club: { name: string; abbreviation: string; primaryColor: string; secondaryColor: string };
-  size?: number;
-}) {
+export function Crest({ club, size = 32 }: { club: { name: string; abbreviation: string; primaryColor: string; secondaryColor: string }; size?: number }) {
   return (
     <div
       className="rounded-full flex items-center justify-center font-bold"
       style={{
-        width: size,
-        height: size,
+        width: size, height: size,
         background: `linear-gradient(135deg, ${club.primaryColor} 0%, ${club.primaryColor} 60%, ${club.secondaryColor} 60%)`,
         color: pickContrast(club.primaryColor),
         fontSize: size * 0.32,
