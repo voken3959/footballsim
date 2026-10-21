@@ -16,7 +16,8 @@ import { generateAttributes, generatePotential } from '../game/attributes';
 import { computeOverall } from '../game/positions';
 import { advanceDay as leagueAdvanceDay, advanceToNextMatch as leagueAdvanceToNextMatch } from '../game/league';
 import { previewTraining, applyTraining } from '../game/training';
-import { finaliseSeason, isSeasonComplete, SeasonSummary } from '../game/season';
+import { generateNextSeason, isSeasonComplete, SeasonSummary } from '../game/season';
+import { generateEmails } from '../game/mailEngine';
 
 // ------------------------------------------------------------
 // CONSTANTS
@@ -86,7 +87,7 @@ export function generateStartingOffers(
     const league = world.leagues.find((l) => l.tier === tier);
     if (!league) continue;
     for (const club of world.clubs.filter((c) => c.leagueId === league.id)) {
-      if (seen.has(club.id)) continue; // Prevent duplicates
+      if (seen.has(club.id)) continue;
       
       const idealRating = 35 + club.reputation * 0.55;
       const diff = Math.abs(idealRating - player.overall);
@@ -219,6 +220,8 @@ interface CareerStore {
   listCareers: () => Promise<CareerSave[]>;
   deleteCareer: (id: string) => Promise<void>;
   clearResults: () => void;
+  markEmailRead: (emailId: string) => void;
+  markAllEmailsRead: () => void;
 
   userPlayer: () => Player | null;
   userClub: () => Club | null;
@@ -289,6 +292,15 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
           body: `${creation.age}-year-old ${creation.primaryPosition} ${userPlayer.displayName} has joined ${startingClub.name}. Manager ${startingClub.managerName} said: "We're excited to have this young talent at the club."`,
           category: 'Transfer',
         }],
+        emails: [{
+          id: `mail_welcome`,
+          date: START_DATE,
+          sender: 'Club Secretary',
+          subject: 'Welcome to the club',
+          body: `Welcome to ${startingClub.name}. We are delighted to have you on board. Please report to the training ground tomorrow morning to meet the manager and the rest of the squad.`,
+          read: false,
+          type: 'News'
+        }],
         pendingTraining: null,
         lastTrainingResult: null,
         activeMatchId: null,
@@ -347,6 +359,15 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
       }
 
       const result = leagueAdvanceDay(workingSave, save.userPlayerId);
+
+      // Generate Mail
+      const userPlayerNow = result.state.players.find(p => p.id === result.state.userPlayerId);
+      if (userPlayerNow) {
+        const newMails = generateEmails(result.state, userPlayerNow, new RNG(result.state.seed, result.state.rngState));
+        if (newMails.length > 0) {
+          result.state.emails = [...result.state.emails, ...newMails];
+        }
+      }
 
       const db = await getDB();
       await db.put(STORE_NAME, result.state);
@@ -412,6 +433,13 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
         const result = leagueAdvanceDay(current, current.userPlayerId);
         current = result.state;
         daysAdvanced++;
+
+        // Generate mail periodically during fast-forward
+        const uNow = current.players.find(p => p.id === current.userPlayerId);
+        if (uNow) {
+          const mails = generateEmails(current, uNow, new RNG(current.seed, current.rngState));
+          if (mails.length > 0) current.emails = [...current.emails, ...mails];
+        }
       }
 
       const db = await getDB();
@@ -442,9 +470,22 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
 
     set({ loading: true });
     try {
-      const result = finaliseSeason(save);
+      const result = generateNextSeason(save);
+      
+      // Add a season wrap-up email
+      result.state.emails.push({
+        id: `mail_season_${Date.now()}`,
+        date: result.state.currentDate,
+        sender: 'Your Agent',
+        subject: `Season ${save.currentSeason} Review`,
+        body: `Well, that's the season done! You finished with ${result.summary.userSeason?.goals || 0} goals and ${result.summary.userSeason?.assists || 0} assists in ${result.summary.userSeason?.appearances || 0} appearances.\n\nEnjoy your break, and I'll be in touch soon about next season.`,
+        read: false,
+        type: 'Agent'
+      });
+
       const db = await getDB();
       await db.put(STORE_NAME, result.state);
+      
       set({
         save: result.state,
         lastSeasonSummary: result.summary,
@@ -493,6 +534,28 @@ export const useCareerStore = create<CareerStore>((set, get) => ({
   },
 
   clearResults: () => set({ lastMatchReport: null, lastTrainingDeltas: null }),
+
+  markEmailRead: (emailId) => {
+    const save = get().save;
+    if (!save) return;
+    const updated = {
+      ...save,
+      emails: save.emails.map(e => e.id === emailId ? { ...e, read: true } : e)
+    };
+    set({ save: updated });
+    getDB().then(db => db.put(STORE_NAME, updated));
+  },
+
+  markAllEmailsRead: () => {
+    const save = get().save;
+    if (!save) return;
+    const updated = {
+      ...save,
+      emails: save.emails.map(e => ({ ...e, read: true }))
+    };
+    set({ save: updated });
+    getDB().then(db => db.put(STORE_NAME, updated));
+  },
 
   userPlayer: () => {
     const save = get().save;
