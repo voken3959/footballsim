@@ -18,7 +18,6 @@ export default function App() {
   const [bootDone, setBootDone] = useState(false);
   const listCareers = useCareerStore((s) => s.listCareers);
 
-  // On boot, if there's no active save but there are stored careers, show the load screen
   useEffect(() => {
     (async () => {
       const careers = await listCareers();
@@ -28,7 +27,6 @@ export default function App() {
     })();
   }, []);
 
-  // Whenever a save appears, drop back to the dashboard
   useEffect(() => {
     if (save && (screen === 'wizard' || screen === 'load')) {
       setScreen('dashboard');
@@ -45,7 +43,12 @@ export default function App() {
 
   if (!save) {
     if (screen === 'load') return <LoadScreen onBack={() => setScreen('wizard')} />;
-    return <CareerWizard onComplete={() => setScreen('dashboard')} />;
+    return (
+      <CareerWizard
+        onComplete={() => setScreen('dashboard')}
+        onLoad={() => setScreen('load')}
+      />
+    );
   }
 
   return (
