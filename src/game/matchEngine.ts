@@ -206,7 +206,6 @@ function runHalf(state: MatchState, startMinute: number, endMinute: number): voi
     advanceMinute(state, endMinute);
     if (state.minute > endMinute) break;
 
-    // ~6-9 actions per minute results in ~500-600 actions per game, which yields realistic stats
     const actions = state.rng.int(5, 8);
     for (let i = 0; i < actions; i++) {
       simulatePossessionAction(state);
@@ -443,7 +442,6 @@ function resolveShot(
 
   const pressure = computePressure(defending, defendSlots, shooter, attackSlots.get(shooter) ?? shooter.primaryPosition, state.rng);
 
-  // Tuned xG bases
   const baseXG = longShot ? 0.04 : zone === 'attack' ? 0.15 : 0.08;
   const skillMod = (shotSkill - 55) * 0.005;
   const pressureMod = -pressure * 0.12;
@@ -463,7 +461,6 @@ function resolveShot(
     if (shooterStats) shooterStats.shotsOnTarget++;
     attacking.stats.shotsOnTarget++;
     
-    // Check for assist
     const assistInfo = (state.lastPasser && state.lastPasser.clubId === attacking.club.id && state.minute - state.lastPasser.minute <= 1)
       ? { player: state.lastPasser.player }
       : null;
@@ -887,9 +884,23 @@ function buildReport(
     }
   }
 
+  // Calculate ratings with match context
   for (const team of [state.home, state.away]) {
+    const isHome = team.isHome;
+    const teamGoals = isHome ? state.home.goals : state.away.goals;
+    const oppGoals = isHome ? state.away.goals : state.home.goals;
+    
+    // Result modifier: Winning is good, losing is bad
+    let resultMod = 0;
+    if (teamGoals > oppGoals) resultMod = 0.3;
+    else if (teamGoals < oppGoals) {
+      resultMod = -0.3;
+      // Heavy loss penalty
+      if (oppGoals - teamGoals >= 3) resultMod -= 0.4;
+    }
+
     for (const s of team.playerStats.values()) {
-      s.rating = computeRating(s);
+      s.rating = computeRating(s, teamGoals, oppGoals, resultMod);
     }
   }
 
@@ -916,22 +927,60 @@ function buildReport(
   };
 }
 
-function computeRating(s: PlayerMatchStats): number {
-  const base = 6.0;
-  let rating = base;
+function computeRating(
+  s: PlayerMatchStats,
+  teamGoals: number,
+  oppGoals: number,
+  resultModifier: number
+): number {
+  let rating = 6.5; // Baseline
+
+  // Attacking contributions
   rating += s.goals * 1.2;
-  rating += s.assists * 0.7;
-  rating += s.keyPasses * 0.15;
-  rating += s.tackles * 0.1;
-  rating += s.interceptions * 0.08;
-  rating += s.saves * 0.15;
-  rating += s.dribblesCompleted * 0.05;
-  rating -= s.foulsCommitted * 0.1;
-  rating -= s.yellowCards * 0.2;
-  rating -= s.redCards * 1.5;
-  if (s.passesAttempted > 5) {
-    const acc = s.passesCompleted / s.passesAttempted;
-    rating += (acc - 0.7) * 1.0;
+  rating += s.assists * 0.8;
+
+  // Position specific logic
+  const isDefender = s.position === 'GK' || s.position === 'CB' || s.position === 'RB' || s.position === 'LB';
+  
+  if (isDefender) {
+    if (oppGoals === 0 && s.minutesPlayed >= 60) rating += 0.5; // Clean sheet bonus
+    rating -= oppGoals * 0.2; // Penalty for every goal conceded
+    
+    // Defensive stats matter more for defenders
+    rating += Math.min(s.tackles, 10) * 0.05;
+    rating += Math.min(s.interceptions, 10) * 0.05;
+    rating += Math.min(s.clearances, 10) * 0.03;
+  } else {
+    // Defensive stats matter less for attackers
+    rating += Math.min(s.tackles, 5) * 0.02;
+    rating += Math.min(s.interceptions, 5) * 0.02;
   }
-  return clamp(round(rating, 1), 1.0, 10.0);
+
+  // Goalkeeper specific
+  if (s.position === 'GK') {
+    rating += s.saves * 0.15;
+  }
+
+  // Playmaking
+  rating += Math.min(s.keyPasses, 5) * 0.1;
+
+  // Passing accuracy (Reward high %, punish low %)
+  if (s.passesAttempted > 10) {
+    const acc = s.passesCompleted / s.passesAttempted;
+    rating += (acc - 0.75) * 1.0; 
+  }
+
+  // Dribbling
+  rating += Math.min(s.dribblesCompleted, 5) * 0.05;
+
+  // Negative actions
+  rating -= s.foulsCommitted * 0.05;
+  rating -= s.yellowCards * 0.15;
+  rating -= s.redCards * 1.5;
+
+  // Apply match context (Win/Loss)
+  rating += resultModifier;
+
+  // Clamp between 1.0 and 9.9. No perfect 10s unless it's truly special.
+  return clamp(round(rating, 1), 1.0, 9.9);
 }
