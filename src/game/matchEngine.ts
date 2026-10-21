@@ -204,7 +204,7 @@ function runHalf(state: MatchState, startMinute: number, endMinute: number): voi
     advanceMinute(state, endMinute);
     if (state.minute > endMinute) break;
 
-    const actions = state.rng.int(8, 14);
+    const actions = state.rng.int(3, 6); // Reduced from 8-14 to 3-6
     for (let i = 0; i < actions; i++) {
       simulatePossessionAction(state);
       if (state.home.redCards >= 3 || state.away.redCards >= 3) return;
@@ -253,8 +253,9 @@ function simulatePossessionAction(state: MatchState): void {
   const inAttack = zone === 'attack';
   const inMid = zone === 'midfield';
 
-  const shotThreshold = inAttack ? 0.32 : inMid ? 0.08 : 0.02;
-  const passThreshold = 0.55;
+  // Reduced thresholds
+  const shotThreshold = inAttack ? 0.06 : inMid ? 0.01 : 0.00;
+  const passThreshold = 0.65;
 
   if (roll < shotThreshold) {
     resolveShot(state, attacking, defending, carrier, attackSlots, defendSlots);
@@ -435,17 +436,18 @@ function resolveShot(
 
   const pressure = computePressure(defending, defendSlots, shooter, attackSlots.get(shooter) ?? shooter.primaryPosition, state.rng);
 
-  const baseXG = longShot ? 0.06 : zone === 'attack' ? 0.22 : 0.12;
+  // Heavily reduced xG bases
+  const baseXG = longShot ? 0.03 : zone === 'attack' ? 0.10 : 0.05;
   const skillMod = (shotSkill - 55) * 0.004;
   const pressureMod = -pressure * 0.12;
-  const xg = clamp(baseXG + skillMod + pressureMod, 0.02, 0.65);
+  const xg = clamp(baseXG + skillMod + pressureMod, 0.01, 0.40);
 
   const saveSkill = (gk.attributes.technical.gkReflexes
     + gk.attributes.technical.oneOnOnes
     + gk.attributes.mental.positioning) / 3;
   const saveMod = (saveSkill - 55) * 0.004;
 
-  const goalChance = clamp(xg - saveMod, 0.02, 0.72);
+  const goalChance = clamp(xg - saveMod, 0.01, 0.50);
 
   attacking.stats.expectedGoals += xg;
 
@@ -515,9 +517,21 @@ function resolveFoul(
   } else if (severity < 0.92) {
     if (defStats) defStats.yellowCards++;
     defending.stats.yellowCards++;
-    pushEvent(state, state.minute, 'YellowCard', defending.club.id,
-      defender.id, defender.displayName, victim.id, victim.displayName,
-      `Yellow card for ${defender.displayName}.`);
+    
+    // Second yellow card check
+    if (defStats && defStats.yellowCards >= 2) {
+      if (defStats) defStats.redCards++;
+      defending.stats.redCards++;
+      defending.redCards++;
+      pushEvent(state, state.minute, 'RedCard', defending.club.id,
+        defender.id, defender.displayName, victim.id, victim.displayName,
+        `SECOND YELLOW! ${defender.displayName} is sent off!`);
+      removeSentOffPlayer(state, defending, defender);
+    } else {
+      pushEvent(state, state.minute, 'YellowCard', defending.club.id,
+        defender.id, defender.displayName, victim.id, victim.displayName,
+        `Yellow card for ${defender.displayName}.`);
+    }
   } else {
     if (defStats) defStats.redCards++;
     defending.stats.redCards++;
@@ -831,8 +845,9 @@ function applyPostMatchCondition(
   const stats = team.playerStats.get(p.id);
   const minutes = stats?.minutesPlayed ?? 0;
 
-  const newFitness = clamp(p.fitness - minutes * 0.35, 0, 100);
-  const newFatigue = clamp(p.fatigue + minutes * 0.4, 0, 100);
+  // Reduced drain to prevent fitness hitting 0 permanently
+  const newFitness = clamp(p.fitness - minutes * 0.25, 0, 100);
+  const newFatigue = clamp(p.fatigue + minutes * 0.3, 0, 100);
   const newSharpness = clamp(p.sharpness + minutes * 0.15, 0, 100);
 
   const rating = stats?.rating ?? 6.0;
