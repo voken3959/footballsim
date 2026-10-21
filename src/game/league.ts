@@ -97,10 +97,33 @@ export function advanceDay(state: CareerSave, userPlayerId: string): DayAdvanceR
       // Apply post-match player condition to user's club
       const updatedById = new Map(updatedMatchPlayers.map((p) => [p.id, p]));
       players = players.map((p) => updatedById.get(p.id) ?? p);
+
+      // Apply full stats to ALL players in this match
+      for (const pStat of sim.report.playerStats) {
+        if (pStat.minutesPlayed > 0) {
+          players = players.map((p) => {
+            if (p.id !== pStat.playerId) return p;
+            return applyMatchStatsToPlayer(p, pStat, state.currentSeason, p.clubId);
+          });
+        }
+      }
+
     } else {
       // Lightweight sim
+      const homeSquad = players.filter((p) => p.clubId === homeClub.id);
+      const awaySquad = players.filter((p) => p.clubId === awayClub.id);
+      
       const lg = lightweightMatch(rng, homeClub, awayClub);
       result = { homeGoals: lg.homeGoals, awayGoals: lg.awayGoals, report: null };
+
+      // Assign goals/assists to AI players
+      const aiStats = simulateAIMatchStats(rng, homeClub, awayClub, homeSquad, awaySquad, lg.homeGoals, lg.awayGoals, newDate);
+      for (const pStat of aiStats) {
+        players = players.map((p) => {
+          if (p.id !== pStat.playerId) return p;
+          return applyMatchStatsToPlayer(p, pStat, state.currentSeason, p.clubId);
+        });
+      }
     }
 
     // Update fixture record
@@ -117,16 +140,13 @@ export function advanceDay(state: CareerSave, userPlayerId: string): DayAdvanceR
   }
 
   // -------------------------------------------
-  // 4. Apply user's match stats to their player
+  // 4. Handle user match news
   // -------------------------------------------
   let wagePaid = 0;
   if (userReport) {
     const userStats = userReport.playerStats.find((s) => s.playerId === userPlayerId);
     if (userStats && userStats.minutesPlayed > 0) {
-      players = players.map((p) => {
-        if (p.id !== userPlayerId) return p;
-        return applyMatchStatsToPlayer(p, userStats, state.currentSeason, userClubId);
-      });
+      // Already applied in the loop above
     }
     // Injury events → apply injuries to relevant players
     players = applyMatchInjuries(players, userReport, rng, newDate);
@@ -156,15 +176,12 @@ export function advanceDay(state: CareerSave, userPlayerId: string): DayAdvanceR
   }
 
   // -------------------------------------------
-  // 6. Pay wages weekly (from career start)
+  // 6. Pay wages weekly
   // -------------------------------------------
   const careerStart = state.createdAt.slice(0, 10);
   const daysSinceStart = daysBetween(careerStart, newDate);
   const isWageDay = daysSinceStart > 0 && daysSinceStart % 7 === 0;
-  if (isWageDay && !userPlayer.injury?.daysRemaining) {
-    wagePaid = userPlayer.contract.weeklyWage;
-  } else if (isWageDay) {
-    // Paid even if injured
+  if (isWageDay) {
     wagePaid = userPlayer.contract.weeklyWage;
   }
 
@@ -194,7 +211,7 @@ export function advanceDay(state: CareerSave, userPlayerId: string): DayAdvanceR
         category: 'Match' as const,
       })),
       ...state.newsFeed,
-    ].slice(0, 100), // cap news history
+    ].slice(0, 100),
     activeMatchId: userReport?.id ?? null,
   };
 
@@ -217,7 +234,6 @@ interface LightweightResult {
 }
 
 function lightweightMatch(rng: RNG, home: Club, away: Club): LightweightResult {
-  // Home advantage ≈ +3 reputation points
   const homeStr = home.reputation + 3;
   const awayStr = away.reputation;
   const diff = homeStr - awayStr;
@@ -232,7 +248,6 @@ function lightweightMatch(rng: RNG, home: Club, away: Club): LightweightResult {
 }
 
 function poisson(rng: RNG, lambda: number): number {
-  // Knuth's algorithm
   const L = Math.exp(-lambda);
   let k = 0;
   let p = 1;
@@ -243,21 +258,111 @@ function poisson(rng: RNG, lambda: number): number {
   return k - 1;
 }
 
+function simulateAIMatchStats(
+  rng: RNG,
+  homeClub: Club,
+  awayClub: Club,
+  homeSquad: Player[],
+  awaySquad: Player[],
+  homeGoals: number,
+  awayGoals: number,
+  date: string,
+): any[] {
+  const stats: any[] = [];
+  
+  const assignGoals = (squad: Player[], clubId: string, goals: number) => {
+    if (goals === 0) return;
+    // Weight by attacking positions
+    const attackers = squad.filter(p => ['ST', 'RW', 'LW', 'AM'].includes(p.primaryPosition));
+    const midfielders = squad.filter(p => ['CM', 'DM'].includes(p.primaryPosition));
+    const defenders = squad.filter(p => ['CB', 'RB', 'LB'].includes(p.primaryPosition));
+    
+    for (let i = 0; i < goals; i++) {
+      const scorer = rng.weighted(
+        [...attackers, ...midfielders, ...defenders],
+        [...attackers.map(() => 10), ...midfielders.map(() => 3), ...defenders.map(() => 1)]
+      );
+      const assister = rng.chance(0.7) ? rng.pick(squad.filter(p => p.id !== scorer.id)) : null;
+      
+      stats.push({
+        playerId: scorer.id,
+        clubId,
+        goals: 1,
+        assists: 0,
+        minutesPlayed: 90,
+        rating: rng.float(6.5, 8.5),
+        yellowCards: rng.chance(0.1) ? 1 : 0,
+        redCards: 0,
+        shots: rng.int(2, 5),
+        shotsOnTarget: rng.int(1, 3),
+        passesAttempted: rng.int(20, 40),
+        passesCompleted: rng.int(15, 35),
+        keyPasses: rng.int(0, 3),
+        dribblesAttempted: rng.int(0, 4),
+        dribblesCompleted: rng.int(0, 3),
+        tackles: rng.int(0, 3),
+        interceptions: rng.int(0, 2),
+        clearances: rng.int(0, 2),
+        saves: 0,
+      });
+      
+      if (assister) {
+        stats.push({
+          playerId: assister.id,
+          clubId,
+          goals: 0,
+          assists: 1,
+          minutesPlayed: 90,
+          rating: rng.float(6.5, 8.5),
+          yellowCards: 0,
+          redCards: 0,
+          shots: rng.int(0, 2),
+          shotsOnTarget: rng.int(0, 1),
+          passesAttempted: rng.int(30, 60),
+          passesCompleted: rng.int(25, 55),
+          keyPasses: rng.int(1, 3),
+          dribblesAttempted: rng.int(0, 3),
+          dribblesCompleted: rng.int(0, 2),
+          tackles: rng.int(0, 2),
+          interceptions: rng.int(0, 2),
+          clearances: rng.int(0, 1),
+          saves: 0,
+        });
+      }
+    }
+  };
+
+  assignGoals(homeSquad, homeClub.id, homeGoals);
+  assignGoals(awaySquad, awayClub.id, awayGoals);
+
+  // Goalkeeper clean sheet logic
+  if (awayGoals === 0) {
+    const gk = homeSquad.find(p => p.primaryPosition === 'GK');
+    if (gk) stats.push({ playerId: gk.id, clubId: homeClub.id, cleanSheets: 1, minutesPlayed: 90 });
+  }
+  if (homeGoals === 0) {
+    const gk = awaySquad.find(p => p.primaryPosition === 'GK');
+    if (gk) stats.push({ playerId: gk.id, clubId: awayClub.id, cleanSheets: 1, minutesPlayed: 90 });
+  }
+
+  return stats;
+}
+
 // ------------------------------------------------------------
 // USER MATCH STATS → PLAYER
 // ------------------------------------------------------------
 
 function applyMatchStatsToPlayer(
   player: Player,
-  stats: { goals: number; assists: number; minutesPlayed: number; rating: number; yellowCards: number; redCards: number },
+  stats: any,
   season: string,
   clubId: string,
 ): Player {
-  // Find or create current-season stats
   const existingIdx = player.seasonStats.findIndex(
     (s) => s.season === season && s.clubId === clubId,
   );
-  const baseSeasonStats: PlayerSeasonStats = existingIdx >= 0
+  
+  const base: PlayerSeasonStats = existingIdx >= 0
     ? player.seasonStats[existingIdx]
     : {
         season,
@@ -270,35 +375,54 @@ function applyMatchStatsToPlayer(
         yellowCards: 0,
         redCards: 0,
         cleanSheets: 0,
+        shots: 0, shotsOnTarget: 0,
+        passesAttempted: 0, passesCompleted: 0, keyPasses: 0,
+        dribblesAttempted: 0, dribblesCompleted: 0,
+        tackles: 0, interceptions: 0, clearances: 0, saves: 0,
       };
 
-  const newAppearances = baseSeasonStats.appearances + 1;
-  const newAvgRating = round(
-    (baseSeasonStats.averageRating * baseSeasonStats.appearances + stats.rating) / newAppearances,
-    2,
-  );
+  const newAppearances = base.appearances + (stats.minutesPlayed > 0 ? 1 : 0);
+  const newAvgRating = newAppearances > 0
+    ? round(
+        (base.averageRating * base.appearances + (stats.rating || 6.0)) / newAppearances,
+        2,
+      )
+    : 0;
 
-  const updatedSeasonStats: PlayerSeasonStats = {
-    ...baseSeasonStats,
+  const updated: PlayerSeasonStats = {
+    ...base,
     appearances: newAppearances,
-    goals: baseSeasonStats.goals + stats.goals,
-    assists: baseSeasonStats.assists + stats.assists,
-    minutesPlayed: baseSeasonStats.minutesPlayed + stats.minutesPlayed,
+    goals: base.goals + (stats.goals || 0),
+    assists: base.assists + (stats.assists || 0),
+    minutesPlayed: base.minutesPlayed + (stats.minutesPlayed || 0),
     averageRating: newAvgRating,
-    yellowCards: baseSeasonStats.yellowCards + stats.yellowCards,
-    redCards: baseSeasonStats.redCards + stats.redCards,
+    yellowCards: base.yellowCards + (stats.yellowCards || 0),
+    redCards: base.redCards + (stats.redCards || 0),
+    cleanSheets: base.cleanSheets + (stats.cleanSheets || 0),
+    
+    shots: base.shots + (stats.shots || 0),
+    shotsOnTarget: base.shotsOnTarget + (stats.shotsOnTarget || 0),
+    passesAttempted: base.passesAttempted + (stats.passesAttempted || 0),
+    passesCompleted: base.passesCompleted + (stats.passesCompleted || 0),
+    keyPasses: base.keyPasses + (stats.keyPasses || 0),
+    dribblesAttempted: base.dribblesAttempted + (stats.dribblesAttempted || 0),
+    dribblesCompleted: base.dribblesCompleted + (stats.dribblesCompleted || 0),
+    tackles: base.tackles + (stats.tackles || 0),
+    interceptions: base.interceptions + (stats.interceptions || 0),
+    clearances: base.clearances + (stats.clearances || 0),
+    saves: base.saves + (stats.saves || 0),
   };
 
   const newSeasonStats = [...player.seasonStats];
-  if (existingIdx >= 0) newSeasonStats[existingIdx] = updatedSeasonStats;
-  else newSeasonStats.push(updatedSeasonStats);
+  if (existingIdx >= 0) newSeasonStats[existingIdx] = updated;
+  else newSeasonStats.push(updated);
 
   return {
     ...player,
     seasonStats: newSeasonStats,
-    careerAppearances: player.careerAppearances + 1,
-    careerGoals: player.careerGoals + stats.goals,
-    careerAssists: player.careerAssists + stats.assists,
+    careerAppearances: player.careerAppearances + (stats.minutesPlayed > 0 ? 1 : 0),
+    careerGoals: player.careerGoals + (stats.goals || 0),
+    careerAssists: player.careerAssists + (stats.assists || 0),
   };
 }
 
@@ -355,11 +479,6 @@ function applyMatchInjuries(
 // ADVANCE UNTIL NEXT USER MATCH (fast-forward)
 // ------------------------------------------------------------
 
-/**
- * Advance day by day until the user has a match or the season ends.
- * Returns the state after the last advance. Stops BEFORE simulating
- * the match — the caller decides whether to play or simulate it.
- */
 export function advanceToNextMatch(
   state: CareerSave,
   userPlayerId: string,
@@ -377,10 +496,7 @@ export function advanceToNextMatch(
         (f.homeClubId === userClubId || f.awayClubId === userClubId),
     );
 
-    if (nextDayFixtures.length > 0) {
-      // Don't simulate this day — leave for user
-      break;
-    }
+    if (nextDayFixtures.length > 0) break;
     if (isAfter(nextDate, current.seasonState.endDate)) break;
 
     const result = advanceDay(current, userPlayerId);
