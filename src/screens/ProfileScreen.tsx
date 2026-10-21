@@ -59,11 +59,10 @@ export default function ProfileScreen() {
         </div>
       </div>
 
-      {/* Attribute groups */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <AttributeGroup title="Technical" attrs={TECH_ATTRS} attributes={user.attributes.technical} />
-        <AttributeGroup title="Physical" attrs={PHYS_ATTRS} attributes={user.attributes.physical} />
-        <AttributeGroup title="Mental" attrs={MENT_ATTRS} attributes={user.attributes.mental} />
+        <AttributeGroup title="Technical" attrs={TECH_ATTRS} attributes={user.attributes.technical as unknown as Record<string, number>} />
+        <AttributeGroup title="Physical" attrs={PHYS_ATTRS} attributes={user.attributes.physical as unknown as Record<string, number>} />
+        <AttributeGroup title="Mental" attrs={MENT_ATTRS} attributes={user.attributes.mental as unknown as Record<string, number>} />
       </div>
 
       {/* Season history */}
