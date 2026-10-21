@@ -381,6 +381,7 @@ export interface CareerSave {
   // Pending user decisions
   pendingTraining: TrainingSession | null;
   lastTrainingResult: TrainingSession | null;
+  trainingPlan?: { focus: TrainingFocus; intensity: TrainingIntensity } | null;
 
   // Match in progress (if user is watching live)
   activeMatchId: string | null;
