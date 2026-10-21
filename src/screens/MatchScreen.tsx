@@ -162,7 +162,6 @@ function MatchdayView() {
 
   const recentReports = save.matchReports.filter((r) => r.homeClubId === club.id || r.awayClubId === club.id).slice(-8).reverse();
 
-  // Predict lineup
   const matchRng = new RNG(save.seed, save.rngState);
   const selection = selectMatchdaySquad({
     club,
