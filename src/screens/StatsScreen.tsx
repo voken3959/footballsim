@@ -1,8 +1,14 @@
 import { useState, useMemo } from 'react';
 import { useCareerStore } from '../store/careerStore';
 import { Crest } from '../components/Layout';
+import type { Player, PlayerSeasonStats } from '../game/types';
 
 type StatCategory = 'Overview' | 'Attacking' | 'Passing' | 'Defending' | 'Goalkeeping';
+
+interface PlayerRow {
+  player: Player;
+  stats: PlayerSeasonStats;
+}
 
 export default function StatsScreen() {
   const save = useCareerStore((s) => s.save)!;
@@ -16,7 +22,7 @@ export default function StatsScreen() {
   const clubMap = useMemo(() => new Map(save.clubs.map(c => [c.id, c])), [save.clubs]);
 
   // Get all players with stats for the current season
-  const rows = useMemo(() => {
+  const rows: PlayerRow[] = useMemo(() => {
     return save.players
       .filter(p => {
         if (leagueFilter !== 'all') {
@@ -28,16 +34,16 @@ export default function StatsScreen() {
       })
       .map(p => {
         const stats = p.seasonStats.find(s => s.season === save.currentSeason);
-        return { player: p, stats: stats || null };
+        return { player: p, stats };
       })
-      .filter(r => r.stats && r.stats.appearances > 0);
+      .filter((r): r is PlayerRow => r.stats !== undefined && r.stats.appearances > 0);
   }, [save.players, save.currentSeason, leagueFilter, clubFilter, clubMap]);
 
   // Sort logic based on category
   const sortedRows = useMemo(() => {
     return [...rows].sort((a, b) => {
-      const sa = a.stats!;
-      const sb = b.stats!;
+      const sa = a.stats;
+      const sb = b.stats;
       if (category === 'Overview') {
         if (sb.averageRating !== sa.averageRating) return sb.averageRating - sa.averageRating;
         return sb.goals - sa.goals;
@@ -160,6 +166,8 @@ export default function StatsScreen() {
               {sortedRows.map((row, idx) => {
                 const { player, stats } = row;
                 const club = clubMap.get(player.clubId);
+                if (!club) return null; // Safeguard
+
                 const isUser = player.id === save.userPlayerId;
                 const pos = player.primaryPosition;
                 
