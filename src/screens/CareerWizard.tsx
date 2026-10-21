@@ -219,7 +219,6 @@ export default function CareerWizard({ onComplete, onLoad }: Props) {
           )}
         </div>
 
-        {/* Add Load Button */}
         <div className="mt-8 pt-4 border-t border-bg-border text-center">
           <button className="text-sm text-txt-muted hover:text-txt transition-colors" onClick={onLoad}>
             Or load an existing career
