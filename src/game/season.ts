@@ -46,30 +46,17 @@ export interface SeasonSummary {
 // DETECTION
 // ------------------------------------------------------------
 
-/**
- * Season is complete when the user's league has no unplayed fixtures
- * and the current date has passed the season end date.
- */
 export function isSeasonComplete(state: CareerSave): boolean {
+  // If date has passed the end date, the season is over.
   if (state.currentDate < state.seasonState.endDate) return false;
-  const user = state.players.find((p) => p.id === state.userPlayerId);
-  if (!user) return false;
-  const userLeague = state.leagues.find((l) => {
-    const club = state.clubs.find((c) => c.id === user.clubId);
-    return club && l.id === club.leagueId;
-  });
-  if (!userLeague) return false;
-  const remaining = state.fixtures.filter(
-    (f) => f.leagueId === userLeague.id && !f.played,
-  );
-  return remaining.length === 0;
+  return true;
 }
 
 // ------------------------------------------------------------
 // ROLLOVER
 // ------------------------------------------------------------
 
-export function finaliseSeason(state: CareerSave): {
+export function generateNextSeason(state: CareerSave): {
   state: CareerSave;
   summary: SeasonSummary;
   news: { headline: string; body: string }[];
@@ -187,8 +174,6 @@ export function finaliseSeason(state: CareerSave): {
   const playersWithContracts = agedPlayers.map((p) => {
     if (p.contract.endDate < nextSeasonStart) {
       if (p.id === state.userPlayerId) {
-        // User: auto-offer one-year extension at same wage for now.
-        // Phase 2 will make this a real negotiation.
         return {
           ...p,
           contract: {
@@ -198,7 +183,6 @@ export function finaliseSeason(state: CareerSave): {
           },
         };
       }
-      // AI players: auto-renew to keep squads intact
       return {
         ...p,
         contract: {
