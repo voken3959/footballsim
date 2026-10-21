@@ -11,10 +11,6 @@ import type {
 } from '../game/types';
 import { Crest } from '../components/Layout';
 
-// ------------------------------------------------------------
-// CONSTANTS
-// ------------------------------------------------------------
-
 const NATIONALITIES: Nationality[] = [
   'England', 'France', 'Germany', 'Spain', 'Italy',
   'Portugal', 'Netherlands', 'Brazil', 'Argentina', 'Belgium',
@@ -50,23 +46,17 @@ const PATHWAYS: { key: CareerCreation['pathway']; title: string; body: string }[
   },
 ];
 
-// ------------------------------------------------------------
-// COMPONENT
-// ------------------------------------------------------------
-
 interface Props {
   onComplete: () => void;
+  onLoad: () => void;
 }
 
-export default function CareerWizard({ onComplete }: Props) {
+export default function CareerWizard({ onComplete, onLoad }: Props) {
   const newCareer = useCareerStore((s) => s.newCareer);
   const loading = useCareerStore((s) => s.loading);
   const error = useCareerStore((s) => s.error);
 
-  // Stable seed for this wizard session
   const seed = useMemo(() => Math.floor(Math.random() * 1_000_000_000), []);
-
-  // World generated once — used only to show offers
   const [world, setWorld] = useState<WorldData | null>(null);
   const [offers, setOffers] = useState<string[]>([]);
 
@@ -83,16 +73,15 @@ export default function CareerWizard({ onComplete }: Props) {
     primaryPosition: 'ST',
     secondaryPosition: null,
     shirtNumber: 9,
-    personality: 'Balanced' as any, // will fix below
+    personality: 'Balanced' as any,
     pathway: 'Youth',
     startingClubId: null,
   });
-  // Correct initial personality
+
   useEffect(() => {
     setForm((f) => ({ ...f, personality: 'Professional' }));
   }, []);
 
-  // Build the world on mount so the offers step is instant
   useEffect(() => {
     const rng = new RNG(seed);
     setWorld(generateWorld(rng, START_DATE));
@@ -102,9 +91,6 @@ export default function CareerWizard({ onComplete }: Props) {
     setForm((f) => ({ ...f, [key]: value }));
   };
 
-  // ----------------------------------------------------------
-  // STEP VALIDATION
-  // ----------------------------------------------------------
   const canProceed = (): boolean => {
     if (step === 1) {
       return (
@@ -114,8 +100,8 @@ export default function CareerWizard({ onComplete }: Props) {
         form.weightKg >= 50 && form.weightKg <= 120
       );
     }
-    if (step === 2) return true; // always has a primary
-    if (step === 3) return true; // pathway always chosen
+    if (step === 2) return true;
+    if (step === 3) return true;
     if (step === 4) {
       if (form.pathway === 'Custom') return form.startingClubId !== null;
       return form.startingClubId !== null;
@@ -123,12 +109,8 @@ export default function CareerWizard({ onComplete }: Props) {
     return true;
   };
 
-  // ----------------------------------------------------------
-  // GENERATE OFFERS WHEN PATHWAY PICKED
-  // ----------------------------------------------------------
   const generateOffers = () => {
     if (!world) return;
-    // Build a temp player to estimate their worth → drives the offers
     const tempRng = new RNG(seed + 1);
     const baseline = pathwayBaseRating(form.pathway, tempRng);
     const fake = {
@@ -153,22 +135,15 @@ export default function CareerWizard({ onComplete }: Props) {
     if (step === 4 && offers.length === 0) generateOffers();
   }, [step]);
 
-  // ----------------------------------------------------------
-  // SUBMIT
-  // ----------------------------------------------------------
   const submit = async () => {
     if (!form.startingClubId) return;
     await newCareer(form, form.startingClubId, seed);
     onComplete();
   };
 
-  // ----------------------------------------------------------
-  // RENDER
-  // ----------------------------------------------------------
   return (
     <div className="min-h-full flex items-start justify-center p-4 md:p-8">
       <div className="w-full max-w-3xl">
-        {/* Header */}
         <div className="mb-6">
           <div className="label text-accent-soft">New Career</div>
           <h1 className="text-2xl md:text-3xl font-bold text-txt mt-1">
@@ -189,7 +164,6 @@ export default function CareerWizard({ onComplete }: Props) {
           </div>
         </div>
 
-        {/* Body */}
         <div className="panel p-5 md:p-6">
           {step === 1 && <StepIdentity form={form} update={update} />}
           {step === 2 && <StepPosition form={form} update={update} />}
@@ -217,7 +191,6 @@ export default function CareerWizard({ onComplete }: Props) {
           )}
         </div>
 
-        {/* Navigation */}
         <div className="mt-4 flex items-center justify-between gap-3">
           <button
             className="btn"
@@ -245,270 +218,135 @@ export default function CareerWizard({ onComplete }: Props) {
             </button>
           )}
         </div>
+
+        {/* Add Load Button */}
+        <div className="mt-8 pt-4 border-t border-bg-border text-center">
+          <button className="text-sm text-txt-muted hover:text-txt transition-colors" onClick={onLoad}>
+            Or load an existing career
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-// ------------------------------------------------------------
-// STEP 1 — IDENTITY
-// ------------------------------------------------------------
-
-function StepIdentity({
-  form,
-  update,
-}: {
-  form: CareerCreation;
-  update: <K extends keyof CareerCreation>(k: K, v: CareerCreation[K]) => void;
-}) {
+function StepIdentity({ form, update }: { form: CareerCreation; update: any }) {
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-lg font-semibold">Personal details</h2>
         <p className="text-txt-muted text-sm">Who are you?</p>
       </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="First name">
-          <input
-            className="input"
-            value={form.firstName}
-            onChange={(e) => update('firstName', e.target.value)}
-            maxLength={20}
-            placeholder="Alex"
-          />
-        </Field>
-        <Field label="Surname">
-          <input
-            className="input"
-            value={form.surname}
-            onChange={(e) => update('surname', e.target.value)}
-            maxLength={20}
-            placeholder="Foster"
-          />
-        </Field>
+        <label className="block">
+          <div className="label mb-1">First name</div>
+          <input className="input" value={form.firstName} onChange={(e) => update('firstName', e.target.value)} maxLength={20} placeholder="Alex" />
+        </label>
+        <label className="block">
+          <div className="label mb-1">Surname</div>
+          <input className="input" value={form.surname} onChange={(e) => update('surname', e.target.value)} maxLength={20} placeholder="Foster" />
+        </label>
       </div>
-
-      <Field label="Display name (optional)">
-        <input
-          className="input"
-          value={form.displayName}
-          onChange={(e) => update('displayName', e.target.value)}
-          placeholder={`${form.firstName} ${form.surname}`.trim() || 'Auto'}
-          maxLength={30}
-        />
-      </Field>
-
+      <label className="block">
+        <div className="label mb-1">Display name (optional)</div>
+        <input className="input" value={form.displayName} onChange={(e) => update('displayName', e.target.value)} placeholder={`${form.firstName} ${form.surname}`.trim() || 'Auto'} maxLength={30} />
+      </label>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Nationality">
-          <select
-            className="select"
-            value={form.nationality}
-            onChange={(e) => update('nationality', e.target.value as Nationality)}
-          >
-            {NATIONALITIES.map((n) => (
-              <option key={n} value={n}>{n}</option>
-            ))}
+        <label className="block">
+          <div className="label mb-1">Nationality</div>
+          <select className="select" value={form.nationality} onChange={(e) => update('nationality', e.target.value)}>
+            {NATIONALITIES.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
-        </Field>
-        <Field label="Starting age">
-          <select
-            className="select"
-            value={form.age}
-            onChange={(e) => update('age', Number(e.target.value))}
-          >
-            {[16, 17, 18, 19, 20, 21].map((a) => (
-              <option key={a} value={a}>{a}</option>
-            ))}
+        </label>
+        <label className="block">
+          <div className="label mb-1">Starting age</div>
+          <select className="select" value={form.age} onChange={(e) => update('age', Number(e.target.value))}>
+            {[16, 17, 18, 19, 20, 21].map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
-        </Field>
+        </label>
       </div>
-
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Field label="Preferred foot">
-          <select
-            className="select"
-            value={form.foot}
-            onChange={(e) => update('foot', e.target.value as Foot)}
-          >
-            {(['Right', 'Left', 'Both'] as Foot[]).map((f) => (
-              <option key={f} value={f}>{f}</option>
-            ))}
+        <label className="block">
+          <div className="label mb-1">Preferred foot</div>
+          <select className="select" value={form.foot} onChange={(e) => update('foot', e.target.value)}>
+            {['Right', 'Left', 'Both'].map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
-        </Field>
-        <Field label="Height (cm)">
-          <input
-            type="number"
-            className="input"
-            min={150}
-            max={210}
-            value={form.heightCm}
-            onChange={(e) => update('heightCm', Number(e.target.value))}
-          />
-        </Field>
-        <Field label="Weight (kg)">
-          <input
-            type="number"
-            className="input"
-            min={50}
-            max={120}
-            value={form.weightKg}
-            onChange={(e) => update('weightKg', Number(e.target.value))}
-          />
-        </Field>
+        </label>
+        <label className="block">
+          <div className="label mb-1">Height (cm)</div>
+          <input type="number" className="input" min={150} max={210} value={form.heightCm} onChange={(e) => update('heightCm', Number(e.target.value))} />
+        </label>
+        <label className="block">
+          <div className="label mb-1">Weight (kg)</div>
+          <input type="number" className="input" min={50} max={120} value={form.weightKg} onChange={(e) => update('weightKg', Number(e.target.value))} />
+        </label>
       </div>
-
-      <Field label="Shirt number">
-        <input
-          type="number"
-          className="input"
-          min={1}
-          max={99}
-          value={form.shirtNumber}
-          onChange={(e) => update('shirtNumber', Number(e.target.value))}
-        />
-      </Field>
-
-      <Field label="Personality">
+      <label className="block">
+        <div className="label mb-1">Shirt number</div>
+        <input type="number" className="input" min={1} max={99} value={form.shirtNumber} onChange={(e) => update('shirtNumber', Number(e.target.value))} />
+      </label>
+      <div>
+        <div className="label mb-2">Personality</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {PERSONALITIES.map((p) => (
-            <button
-              key={p}
-              onClick={() => update('personality', p)}
-              className={`px-3 py-2 rounded-md text-sm border transition-colors ${
-                form.personality === p
-                  ? 'border-accent bg-accent/10 text-txt'
-                  : 'border-bg-border bg-bg-card text-txt-muted hover:text-txt'
-              }`}
-            >
+            <button key={p} onClick={() => update('personality', p)} className={`px-3 py-2 rounded-md text-sm border transition-colors ${form.personality === p ? 'border-accent bg-accent/10 text-txt' : 'border-bg-border bg-bg-card text-txt-muted hover:text-txt'}`}>
               {p}
             </button>
           ))}
         </div>
-      </Field>
-
-      {!form.displayName && form.firstName && form.surname && (
-        <p className="text-[11px] text-txt-dim">
-          Display name will default to "{form.firstName} {form.surname}".
-        </p>
-      )}
+      </div>
     </div>
   );
 }
 
-// ------------------------------------------------------------
-// STEP 2 — POSITION
-// ------------------------------------------------------------
-
-function StepPosition({
-  form,
-  update,
-}: {
-  form: CareerCreation;
-  update: <K extends keyof CareerCreation>(k: K, v: CareerCreation[K]) => void;
-}) {
+function StepPosition({ form, update }: { form: CareerCreation; update: any }) {
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-lg font-semibold">Position</h2>
         <p className="text-txt-muted text-sm">Where do you play?</p>
       </div>
-
-      <Field label="Primary position">
+      <div>
+        <div className="label mb-2">Primary position</div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           {ALL_POSITIONS.map((p) => (
-            <button
-              key={p}
-              onClick={() => update('primaryPosition', p)}
-              className={`px-2 py-3 rounded-md text-sm border transition-colors flex flex-col items-center gap-0.5 ${
-                form.primaryPosition === p
-                  ? 'border-accent bg-accent/10 text-txt'
-                  : 'border-bg-border bg-bg-card text-txt-muted hover:text-txt'
-              }`}
-            >
+            <button key={p} onClick={() => update('primaryPosition', p)} className={`px-2 py-3 rounded-md text-sm border transition-colors flex flex-col items-center gap-0.5 ${form.primaryPosition === p ? 'border-accent bg-accent/10 text-txt' : 'border-bg-border bg-bg-card text-txt-muted hover:text-txt'}`}>
               <span className="font-bold text-base">{p}</span>
-              <span className="text-[10px] opacity-80">
-                {POSITION_LABEL[p].split(' ')[0]}
-              </span>
+              <span className="text-[10px] opacity-80">{POSITION_LABEL[p].split(' ')[0]}</span>
             </button>
           ))}
         </div>
-      </Field>
-
-      <Field label="Secondary position (optional)">
+      </div>
+      <div>
+        <div className="label mb-2">Secondary position (optional)</div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-          <button
-            onClick={() => update('secondaryPosition', null)}
-            className={`px-2 py-3 rounded-md text-sm border transition-colors ${
-              form.secondaryPosition === null
-                ? 'border-accent bg-accent/10 text-txt'
-                : 'border-bg-border bg-bg-card text-txt-muted hover:text-txt'
-            }`}
-          >
+          <button onClick={() => update('secondaryPosition', null)} className={`px-2 py-3 rounded-md text-sm border transition-colors ${form.secondaryPosition === null ? 'border-accent bg-accent/10 text-txt' : 'border-bg-border bg-bg-card text-txt-muted hover:text-txt'}`}>
             None
           </button>
           {ALL_POSITIONS.filter((p) => p !== form.primaryPosition).map((p) => (
-            <button
-              key={p}
-              onClick={() => update('secondaryPosition', p)}
-              className={`px-2 py-3 rounded-md text-sm border transition-colors ${
-                form.secondaryPosition === p
-                  ? 'border-accent bg-accent/10 text-txt'
-                  : 'border-bg-border bg-bg-card text-txt-muted hover:text-txt'
-              }`}
-            >
+            <button key={p} onClick={() => update('secondaryPosition', p)} className={`px-2 py-3 rounded-md text-sm border transition-colors ${form.secondaryPosition === p ? 'border-accent bg-accent/10 text-txt' : 'border-bg-border bg-bg-card text-txt-muted hover:text-txt'}`}>
               {p}
             </button>
           ))}
         </div>
-      </Field>
-
+      </div>
       <div className="panel-card p-3 text-xs text-txt-muted">
-        <strong className="text-txt">Group:</strong>{' '}
-        {POSITION_GROUP[form.primaryPosition]} · Attributes will be weighted
-        toward {POSITION_LABEL[form.primaryPosition].toLowerCase()} priorities.
+        <strong className="text-txt">Group:</strong> {POSITION_GROUP[form.primaryPosition]} · Attributes will be weighted toward {POSITION_LABEL[form.primaryPosition].toLowerCase()} priorities.
       </div>
     </div>
   );
 }
 
-// ------------------------------------------------------------
-// STEP 3 — PATHWAY
-// ------------------------------------------------------------
-
-function StepPathway({
-  form,
-  update,
-  onNext,
-}: {
-  form: CareerCreation;
-  update: <K extends keyof CareerCreation>(k: K, v: CareerCreation[K]) => void;
-  onNext: () => void;
-}) {
+function StepPathway({ form, update, onNext }: { form: CareerCreation; update: any; onNext: () => void }) {
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-lg font-semibold">Starting pathway</h2>
-        <p className="text-txt-muted text-sm">
-          How does your career begin?
-        </p>
+        <p className="text-txt-muted text-sm">How does your career begin?</p>
       </div>
-
       <div className="space-y-2">
         {PATHWAYS.map((p) => (
-          <button
-            key={p.key}
-            onClick={() => {
-              update('pathway', p.key);
-              update('startingClubId', null);
-              onNext();
-            }}
-            className={`w-full text-left p-4 rounded-md border transition-colors ${
-              form.pathway === p.key
-                ? 'border-accent bg-accent/10'
-                : 'border-bg-border bg-bg-card hover:border-txt-dim'
-            }`}
-          >
+          <button key={p.key} onClick={() => { update('pathway', p.key); update('startingClubId', null); onNext(); }} className={`w-full text-left p-4 rounded-md border transition-colors ${form.pathway === p.key ? 'border-accent bg-accent/10' : 'border-bg-border bg-bg-card hover:border-txt-dim'}`}>
             <div className="font-semibold text-txt">{p.title}</div>
             <div className="text-sm text-txt-muted mt-1">{p.body}</div>
           </button>
@@ -518,68 +356,28 @@ function StepPathway({
   );
 }
 
-// ------------------------------------------------------------
-// STEP 4 — CLUB OFFER
-// ------------------------------------------------------------
-
-function StepClub({
-  form,
-  update,
-  world,
-  offers,
-}: {
-  form: CareerCreation;
-  update: <K extends keyof CareerCreation>(k: K, v: CareerCreation[K]) => void;
-  world: WorldData;
-  offers: string[];
-}) {
-  const clubList = offers
-    .map((id) => world.clubs.find((c) => c.id === id))
-    .filter(Boolean) as NonNullable<typeof world.clubs[0]>[];
-
+function StepClub({ form, update, world, offers }: { form: CareerCreation; update: any; world: WorldData; offers: string[] }) {
+  const clubList = offers.map((id) => world.clubs.find((c) => c.id === id)).filter(Boolean) as any[];
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-lg font-semibold">Club offers</h2>
-        <p className="text-txt-muted text-sm">
-          These clubs are interested in signing you. Pick one to start your
-          career.
-        </p>
+        <p className="text-txt-muted text-sm">These clubs are interested in signing you. Pick one to start your career.</p>
       </div>
-
-      {clubList.length === 0 && (
-        <div className="text-sm text-state-warn">
-          No offers yet — try a different pathway.
-        </div>
-      )}
-
+      {clubList.length === 0 && <div className="text-sm text-state-warn">No offers yet — try a different pathway.</div>}
       <div className="space-y-2">
-        {clubList.map((club) => {
+        {clubList.map((club: any) => {
           const league = world.leagues.find((l) => l.id === club.leagueId);
           const selected = form.startingClubId === club.id;
           return (
-            <button
-              key={club.id}
-              onClick={() => update('startingClubId', club.id)}
-              className={`w-full text-left p-4 rounded-md border transition-colors flex items-start gap-3 ${
-                selected
-                  ? 'border-accent bg-accent/10'
-                  : 'border-bg-border bg-bg-card hover:border-txt-dim'
-              }`}
-            >
+            <button key={club.id} onClick={() => update('startingClubId', club.id)} className={`w-full text-left p-4 rounded-md border transition-colors flex items-start gap-3 ${selected ? 'border-accent bg-accent/10' : 'border-bg-border bg-bg-card hover:border-txt-dim'}`}>
               <Crest club={club} size={44} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between gap-2 flex-wrap">
-                  <span className="font-semibold text-txt truncate">
-                    {club.name}
-                  </span>
-                  <span className="text-[11px] text-txt-muted">
-                    {league?.name} · T{league?.tier}
-                  </span>
+                  <span className="font-semibold text-txt truncate">{club.name}</span>
+                  <span className="text-[11px] text-txt-muted">{league?.name} · T{league?.tier}</span>
                 </div>
-                <div className="text-xs text-txt-muted mt-0.5">
-                  {club.stadium} · {club.managerName}
-                </div>
+                <div className="text-xs text-txt-muted mt-0.5">{club.stadium} · {club.managerName}</div>
                 <div className="text-[11px] text-txt-dim mt-1 flex gap-3">
                   <span>Reputation {club.reputation}</span>
                   <span>Finances {club.finances}</span>
@@ -595,44 +393,28 @@ function StepClub({
   );
 }
 
-// ------------------------------------------------------------
-// STEP 5 — CONFIRM
-// ------------------------------------------------------------
-
-function StepConfirm({
-  form,
-  world,
-}: {
-  form: CareerCreation;
-  world: WorldData;
-}) {
+function StepConfirm({ form, world }: { form: CareerCreation; world: WorldData }) {
   const club = world.clubs.find((c) => c.id === form.startingClubId);
   const league = club ? world.leagues.find((l) => l.id === club.leagueId) : null;
   const display = form.displayName || `${form.firstName} ${form.surname}`.trim();
-
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-lg font-semibold">Confirm</h2>
         <p className="text-txt-muted text-sm">Ready to begin your career?</p>
       </div>
-
       <div className="panel-card p-4 grid grid-cols-2 gap-4 text-sm">
-        <KV label="Name" value={display} />
-        <KV label="Nationality" value={form.nationality} />
-        <KV label="Age" value={String(form.age)} />
-        <KV label="Foot" value={form.foot} />
-        <KV
-          label="Position"
-          value={`${form.primaryPosition}${form.secondaryPosition ? ` / ${form.secondaryPosition}` : ''}`}
-        />
-        <KV label="Personality" value={form.personality} />
-        <KV label="Height" value={`${form.heightCm} cm`} />
-        <KV label="Weight" value={`${form.weightKg} kg`} />
-        <KV label="Pathway" value={form.pathway} />
-        <KV label="Shirt" value={`#${form.shirtNumber}`} />
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Name</div><div className="text-txt font-medium truncate">{display}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Nationality</div><div className="text-txt font-medium truncate">{form.nationality}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Age</div><div className="text-txt font-medium truncate">{form.age}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Foot</div><div className="text-txt font-medium truncate">{form.foot}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Position</div><div className="text-txt font-medium truncate">{form.primaryPosition}{form.secondaryPosition ? ` / ${form.secondaryPosition}` : ''}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Personality</div><div className="text-txt font-medium truncate">{form.personality}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Height</div><div className="text-txt font-medium truncate">{form.heightCm} cm</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Weight</div><div className="text-txt font-medium truncate">{form.weightKg} kg</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Pathway</div><div className="text-txt font-medium truncate">{form.pathway}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-txt-dim">Shirt</div><div className="text-txt font-medium truncate">#{form.shirtNumber}</div></div>
       </div>
-
       {club && (
         <div className="panel-card p-4">
           <div className="flex items-center gap-3">
@@ -640,47 +422,15 @@ function StepConfirm({
             <div>
               <div className="label">Starting club</div>
               <div className="font-semibold text-txt">{club.name}</div>
-              <div className="text-xs text-txt-muted">
-                {league?.name} · {club.stadium}
-              </div>
+              <div className="text-xs text-txt-muted">{league?.name} · {club.stadium}</div>
             </div>
           </div>
         </div>
       )}
-
-      <p className="text-[11px] text-txt-dim">
-        Seed {`#${(window as any).__career_seed ?? '—'}`} · Starting date{' '}
-        {formatDate(START_DATE)}
-      </p>
     </div>
   );
 }
 
-// ------------------------------------------------------------
-// HELPERS
-// ------------------------------------------------------------
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <div className="label mb-1">{label}</div>
-      {children}
-    </label>
-  );
-}
-
-function KV({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-[10px] uppercase tracking-wider text-txt-dim">
-        {label}
-      </div>
-      <div className="text-txt font-medium truncate">{value}</div>
-    </div>
-  );
-}
-
-// Approximate starting overall for a pathway — matches store's buildUserPlayer
 function pathwayBaseRating(pathway: CareerCreation['pathway'], rng: RNG): number {
   switch (pathway) {
     case 'Youth': return rng.int(50, 57);
