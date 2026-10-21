@@ -8,6 +8,7 @@ import type {
 } from './types';
 import { RNG, clamp, round } from './rng';
 import { computeOverall, positionFamiliarity, effectiveAttribute } from './positions';
+import { selectMatchdaySquad } from './squadSelection';
 
 // ------------------------------------------------------------
 // PUBLIC API
@@ -16,19 +17,17 @@ import { computeOverall, positionFamiliarity, effectiveAttribute } from './posit
 export interface MatchSimOptions {
   homeClub: Club;
   awayClub: Club;
-  homeSquad: Player[];    // full squad eligible for selection
+  homeSquad: Player[];
   awaySquad: Player[];
   rng: RNG;
   competition: string;
   fixtureId: string;
   playedDate: string;
-  /** If the user is in one of these squads, we boost commentary detail. */
   userPlayerId?: string;
 }
 
 export interface MatchSimResult {
   report: MatchReport;
-  /** Updated player state (fitness, fatigue, form, injury) — merged by caller. */
   updatedPlayers: Player[];
 }
 
@@ -37,10 +36,10 @@ export interface MatchSimResult {
 // ------------------------------------------------------------
 
 interface TacticalProfile {
-  possessionBias: number;   // -1..+1; higher = more patient build-up
-  directness: number;       // 0..1; higher = more long balls & through balls
-  pressIntensity: number;   // 0..1; higher = more turnovers but more fouls
-  defensiveLine: number;    // 0..1; higher = higher line (riskier)
+  possessionBias: number;
+  directness: number;
+  pressIntensity: number;
+  defensiveLine: number;
 }
 
 function tacticProfile(tactic: TacticStyle): TacticalProfile {
@@ -70,102 +69,6 @@ interface TeamStrength {
   midfield: number;
   defence: number;
   overall: number;
-}
-
-function buildStartingXI(
-  squad: Player[],
-  formation: string,
-  rng: RNG,
-): { starters: Player[]; bench: Player[]; slots: Map<Player, Position> } {
-  // Formation-agnostic: pick best available per position family
-  const rolesNeeded: { pos: Position; count: number }[] = formationRoleMap(formation);
-
-  const available = squad.filter(
-    (p) => !p.injury && p.fitness > 25,
-  );
-
-  const starters: Player[] = [];
-  const slots = new Map<Player, Position>();
-  const taken = new Set<string>();
-
-  for (const { pos, count } of rolesNeeded) {
-    // Candidates: same pos first, then adjacent, then any
-    const candidates = available
-      .filter((p) => !taken.has(p.id))
-      .map((p) => {
-        const fam = positionFamiliarity(p.primaryPosition, p.secondaryPosition, pos);
-        const fitness = p.fitness / 100;
-        const form = 1 + p.form * 0.05;
-        const sharp = p.sharpness / 100;
-        const score = p.overall * fam * (0.6 + 0.25 * fitness + 0.1 * form + 0.05 * sharp);
-        return { player: p, score };
-      })
-      .sort((a, b) => b.score - a.score);
-
-    for (let i = 0; i < count && i < candidates.length; i++) {
-      starters.push(candidates[i].player);
-      slots.set(candidates[i].player, pos);
-      taken.add(candidates[i].player.id);
-    }
-  }
-
-  const bench = available
-    .filter((p) => !taken.has(p.id))
-    .sort((a, b) => b.overall - a.overall)
-    .slice(0, 7);
-
-  return { starters, bench, slots };
-}
-
-function formationRoleMap(formation: string): { pos: Position; count: number }[] {
-  switch (formation) {
-    case '4-3-3':
-      return [
-        { pos: 'GK', count: 1 },
-        { pos: 'RB', count: 1 }, { pos: 'CB', count: 2 }, { pos: 'LB', count: 1 },
-        { pos: 'DM', count: 1 }, { pos: 'CM', count: 2 },
-        { pos: 'RW', count: 1 }, { pos: 'ST', count: 1 }, { pos: 'LW', count: 1 },
-      ];
-    case '4-2-3-1':
-      return [
-        { pos: 'GK', count: 1 },
-        { pos: 'RB', count: 1 }, { pos: 'CB', count: 2 }, { pos: 'LB', count: 1 },
-        { pos: 'DM', count: 2 },
-        { pos: 'RW', count: 1 }, { pos: 'AM', count: 1 }, { pos: 'LW', count: 1 },
-        { pos: 'ST', count: 1 },
-      ];
-    case '4-4-2':
-      return [
-        { pos: 'GK', count: 1 },
-        { pos: 'RB', count: 1 }, { pos: 'CB', count: 2 }, { pos: 'LB', count: 1 },
-        { pos: 'RW', count: 1 }, { pos: 'CM', count: 2 }, { pos: 'LW', count: 1 },
-        { pos: 'ST', count: 2 },
-      ];
-    case '3-4-2-1':
-      return [
-        { pos: 'GK', count: 1 },
-        { pos: 'CB', count: 3 },
-        { pos: 'RB', count: 1 }, { pos: 'CM', count: 2 }, { pos: 'LB', count: 1 },
-        { pos: 'AM', count: 2 },
-        { pos: 'ST', count: 1 },
-      ];
-    case '5-3-2':
-      return [
-        { pos: 'GK', count: 1 },
-        { pos: 'RB', count: 1 }, { pos: 'CB', count: 3 }, { pos: 'LB', count: 1 },
-        { pos: 'DM', count: 1 }, { pos: 'CM', count: 2 },
-        { pos: 'ST', count: 2 },
-      ];
-    case '5-4-1':
-      return [
-        { pos: 'GK', count: 1 },
-        { pos: 'RB', count: 1 }, { pos: 'CB', count: 3 }, { pos: 'LB', count: 1 },
-        { pos: 'RW', count: 1 }, { pos: 'CM', count: 2 }, { pos: 'LW', count: 1 },
-        { pos: 'ST', count: 1 },
-      ];
-    default:
-      return formationRoleMap('4-4-2');
-  }
 }
 
 function calculateTeamStrength(
@@ -233,8 +136,22 @@ interface MatchState {
 export function simulateMatch(opts: MatchSimOptions): MatchSimResult {
   const { homeClub, awayClub, homeSquad, awaySquad, rng, competition, fixtureId, playedDate, userPlayerId } = opts;
 
-  const homeXI = buildStartingXI(homeSquad, homeClub.formation, rng);
-  const awayXI = buildStartingXI(awaySquad, awayClub.formation, rng);
+  const homeSel = selectMatchdaySquad({
+    club: homeClub,
+    squad: homeSquad,
+    userPlayerId: userPlayerId ?? '__none__',
+    matchImportance: 0.6,
+    rng,
+  });
+  const awaySel = selectMatchdaySquad({
+    club: awayClub,
+    squad: awaySquad,
+    userPlayerId: userPlayerId ?? '__none__',
+    matchImportance: 0.6,
+    rng,
+  });
+  const homeXI = { starters: homeSel.starters, bench: homeSel.bench, slots: homeSel.slots };
+  const awayXI = { starters: awaySel.starters, bench: awaySel.bench, slots: awaySel.slots };
 
   const home = createTeamState(homeClub, homeXI, homeClub.formation, true);
   const away = createTeamState(awayClub, awayXI, awayClub.formation, false);
@@ -243,7 +160,7 @@ export function simulateMatch(opts: MatchSimOptions): MatchSimResult {
     minute: 0,
     home,
     away,
-    possession: 'home', // home kicks off
+    possession: 'home',
     possessionZone: 'midfield',
     events: [],
     rng,
@@ -251,29 +168,23 @@ export function simulateMatch(opts: MatchSimOptions): MatchSimResult {
 
   pushEvent(state, 0, 'KickOff', homeClub.id, null, null, null, null, 'Kick-off.');
 
-  // First half
   runHalf(state, 1, 45 + rng.int(1, 4));
   pushEvent(state, state.minute, 'HalfTime', homeClub.id, null, null, null, null,
     `Half-time: ${homeClub.shortName} ${home.goals}-${away.goals} ${awayClub.shortName}.`);
 
-  // Half-time recovery and tactical tweak (very light)
   applyHalfTimeRecovery(home);
   applyHalfTimeRecovery(away);
-  // Trailing team turns up the intensity
   adjustForScoreline(home, away);
   adjustForScoreline(away, home);
 
-  // Second half — away restarts
   state.possession = 'away';
   state.possessionZone = 'midfield';
   runHalf(state, 46, 90 + rng.int(2, 6));
   pushEvent(state, state.minute, 'FullTime', homeClub.id, null, null, null, null,
     `Full-time: ${homeClub.shortName} ${home.goals}-${away.goals} ${awayClub.shortName}.`);
 
-  // Build report
   const report = buildReport(state, fixtureId, playedDate, competition);
 
-  // Apply post-match condition updates to all involved players
   const updatedPlayers: Player[] = [];
   for (const p of [...home.starters, ...home.bench, ...away.starters, ...away.bench]) {
     updatedPlayers.push(applyPostMatchCondition(p, state, home, away));
@@ -293,16 +204,10 @@ function runHalf(state: MatchState, startMinute: number, endMinute: number): voi
     advanceMinute(state, endMinute);
     if (state.minute > endMinute) break;
 
-    // 10-14 possession actions per minute average
     const actions = state.rng.int(8, 14);
     for (let i = 0; i < actions; i++) {
       simulatePossessionAction(state);
-      if (state.home.redCards >= 3 || state.away.redCards >= 3) return; // abandoned
-    }
-
-    // Halftime stops
-    if (startMinute === 1 && state.minute === 45) {
-      // Stoppage time handled by endMinute
+      if (state.home.redCards >= 3 || state.away.redCards >= 3) return;
     }
   }
 }
@@ -311,19 +216,16 @@ function advanceMinute(state: MatchState, limit: number): void {
   state.minute++;
   if (state.minute > limit) return;
 
-  // Occasional injury check on active players
   if (state.rng.chance(0.02)) {
     const team = state.rng.chance(0.5) ? state.home : state.away;
     const victim = state.rng.pick(team.starters);
     if (victim && !victim.injury) {
       pushEvent(state, state.minute, 'Injury', team.club.id, victim.id, victim.displayName, null, null,
         `${victim.displayName} is down and needs treatment.`);
-      // Mark for sub at next stoppage — simplified: sub immediately
       trySubstitute(state, team, victim, 'injury');
     }
   }
 
-  // Substitutions in second half
   if (state.minute >= 55 && state.minute <= 85) {
     if (state.rng.chance(0.08)) tryTacticalSub(state);
   }
@@ -335,7 +237,6 @@ function simulatePossessionAction(state: MatchState): void {
   const attackSlots = attacking.slots;
   const defendSlots = defending.slots;
 
-  // Pick player on the ball based on current zone
   const zone = state.possessionZone;
   const candidates = attacking.starters.filter((p) => {
     if (p.injury) return false;
@@ -348,13 +249,10 @@ function simulatePossessionAction(state: MatchState): void {
   const carrier = pickCarrier(state.rng, candidates);
   if (!carrier) return;
 
-  // Decide action
   const roll = state.rng.next();
   const inAttack = zone === 'attack';
   const inMid = zone === 'midfield';
-  const inDef = zone === 'defence';
 
-  // Shot thresholds increase the closer to goal
   const shotThreshold = inAttack ? 0.32 : inMid ? 0.08 : 0.02;
   const passThreshold = 0.55;
 
@@ -366,13 +264,11 @@ function simulatePossessionAction(state: MatchState): void {
     resolvePass(state, attacking, defending, carrier, attackSlots, defendSlots);
     return;
   }
-  // Dribble
   resolveDribble(state, attacking, defending, carrier, attackSlots, defendSlots);
 }
 
 function pickCarrier(rng: RNG, candidates: Player[]): Player | null {
   if (candidates.length === 0) return null;
-  // Weight by overall and slight attacking preference
   const weights = candidates.map((p) => Math.pow(p.overall / 60, 1.3));
   return rng.weighted(candidates, weights);
 }
@@ -392,7 +288,6 @@ function resolvePass(
   const carrierPos = attackSlots.get(carrier) ?? carrier.primaryPosition;
   const carrierGroup = positionGroup(carrierPos);
 
-  // Choose recipient
   const teammates = attacking.starters.filter((p) => p.id !== carrier.id && !p.injury);
   if (teammates.length === 0) return;
 
@@ -407,7 +302,6 @@ function resolvePass(
   });
   const recipient = state.rng.pick(recipients.length > 0 ? recipients : teammates);
 
-  // Pass accuracy
   const passer = carrier;
   const passSkill = wantsThroughBall
     ? (passer.attributes.technical.longPassing + passer.attributes.mental.vision) / 2
@@ -423,13 +317,11 @@ function resolvePass(
     + (carrier.attributes.mental.composure - 50) * 0.003;
   successChance = clamp(successChance, 0.2, 0.95);
 
-  // Track pass attempt
   attacking.stats.passes++;
   const carrierStats = getPlayerStats(attacking, carrier);
   if (carrierStats) carrierStats.passesAttempted++;
 
   if (!state.rng.chance(successChance)) {
-    // Interception
     const interceptor = pickDefensiveActor(defending, defendSlots, 'midfield');
     if (interceptor) {
       const intStats = getPlayerStats(defending, interceptor);
@@ -444,15 +336,14 @@ function resolvePass(
   }
 
   if (carrierStats) carrierStats.passesCompleted++;
+  attacking.stats.passesCompleted++;
   if (wantsThroughBall) {
     const targetStats = getPlayerStats(attacking, recipient);
     if (targetStats) targetStats.keyPasses++;
   }
 
-  // Advance the zone
   const progression = wantsThroughBall ? 2 : 1;
   state.possessionZone = advanceZone(state.possessionZone, progression);
-  // Occasionally set up a shot event immediately
   if (state.possessionZone === 'attack' && wantsThroughBall && state.rng.chance(0.4)) {
     resolveShot(state, attacking, defending, recipient, attackSlots, defendSlots);
   }
@@ -470,10 +361,8 @@ function resolveDribble(
   const carrierStats = getPlayerStats(attacking, carrier);
   if (carrierStats) carrierStats.dribblesAttempted++;
 
-  // Find nearest defender
   const defender = pickDefensiveActor(defending, defendSlots, state.possessionZone);
   if (!defender) {
-    // No defender — free advance
     if (carrierStats) carrierStats.dribblesCompleted++;
     state.possessionZone = advanceZone(state.possessionZone, 1);
     return;
@@ -502,7 +391,6 @@ function resolveDribble(
     if (carrierStats) carrierStats.dribblesCompleted++;
     state.possessionZone = advanceZone(state.possessionZone, 1);
   } else {
-    // Tackle or foul
     const defStats = getPlayerStats(defending, defender);
     if (defStats) defStats.tackles++;
     const foulChance = 0.2 + defending.tactic.pressIntensity * 0.15;
@@ -532,54 +420,42 @@ function resolveShot(
   }
   attacking.stats.shots++;
 
-  // Distance/quality by zone
   const zone = state.possessionZone;
   const longShot = zone === 'midfield' || state.rng.chance(0.3);
 
-  // Goalkeeper
   const gk = findGK(defending, defendSlots);
   if (!gk) {
-    // No keeper — free goal
     scoreGoal(state, attacking, defending, shooter, null);
     return;
   }
 
-  // Shot skill
   const shotSkill = longShot
     ? (shooter.attributes.technical.longShots + shooter.attributes.technical.finishing) / 2
     : shooter.attributes.technical.finishing;
 
-  // Pressure from defenders
   const pressure = computePressure(defending, defendSlots, shooter, attackSlots.get(shooter) ?? shooter.primaryPosition, state.rng);
 
-  // Base xG
   const baseXG = longShot ? 0.06 : zone === 'attack' ? 0.22 : 0.12;
   const skillMod = (shotSkill - 55) * 0.004;
   const pressureMod = -pressure * 0.12;
   const xg = clamp(baseXG + skillMod + pressureMod, 0.02, 0.65);
 
-  // Save skill
   const saveSkill = (gk.attributes.technical.gkReflexes
     + gk.attributes.technical.oneOnOnes
     + gk.attributes.mental.positioning) / 3;
   const saveMod = (saveSkill - 55) * 0.004;
 
-  // Final goal probability — xG adjusted by keeper
   const goalChance = clamp(xg - saveMod, 0.02, 0.72);
 
   attacking.stats.expectedGoals += xg;
 
-  // Resolve
   const roll = state.rng.next();
   if (roll < goalChance) {
-    // Goal
     if (shooterStats) shooterStats.shotsOnTarget++;
     attacking.stats.shotsOnTarget++;
-    // Assist: if last event was a pass from a teammate
     const assistInfo = findRecentAssist(state, attacking.club.id);
     scoreGoal(state, attacking, defending, shooter, assistInfo);
   } else if (roll < goalChance + 0.35) {
-    // Saved
     if (shooterStats) shooterStats.shotsOnTarget++;
     attacking.stats.shotsOnTarget++;
     const gkStats = getPlayerStats(defending, gk);
@@ -587,12 +463,10 @@ function resolveShot(
     pushEvent(state, state.minute, 'Save', defending.club.id,
       gk.id, gk.displayName, shooter.id, shooter.displayName,
       `${gk.displayName} saves ${shooter.displayName}'s effort.`);
-    // Sometimes results in a corner
     if (state.rng.chance(0.4)) {
       attacking.stats.corners++;
       pushEvent(state, state.minute, 'Corner', attacking.club.id,
         null, null, null, null, `Corner for ${attacking.club.shortName}.`);
-      // Corner chance to become a shot
       if (state.rng.chance(0.35)) {
         const header = pickHeaderThreat(state.rng, attacking);
         if (header) {
@@ -601,12 +475,10 @@ function resolveShot(
       }
     }
   } else if (roll < goalChance + 0.7) {
-    // Off target
     pushEvent(state, state.minute, 'ShotOffTarget', attacking.club.id,
       shooter.id, shooter.displayName, null, null,
       `${shooter.displayName} drags it wide.`);
   } else {
-    // Blocked
     const blocker = pickDefensiveActor(defending, defendSlots, 'defence');
     if (blocker) {
       const bStats = getPlayerStats(defending, blocker);
@@ -617,7 +489,6 @@ function resolveShot(
     }
   }
 
-  // After a shot, possession often flips or returns to midfield
   if (state.rng.chance(0.55)) {
     state.possession = defending.isHome ? 'home' : 'away';
     state.possessionZone = 'defence';
@@ -657,7 +528,6 @@ function resolveFoul(
     removeSentOffPlayer(state, defending, defender);
   }
 
-  // Possession flips after a foul
   state.possession = defending.isHome ? 'away' : 'home';
   state.possessionZone = 'midfield';
 }
@@ -683,7 +553,6 @@ function scoreGoal(
       ? `GOAL! ${scorer.displayName} finishes from ${assistInfo.player.displayName}'s pass.`
       : `GOAL! ${scorer.displayName} scores!`);
 
-  // Kick-off resets
   state.possession = defending.isHome ? 'home' : 'away';
   state.possessionZone = 'midfield';
 }
@@ -696,7 +565,6 @@ function tryTacticalSub(state: MatchState): void {
   const teams = [state.home, state.away];
   for (const team of teams) {
     if (team.subsUsed >= 5) continue;
-    // Find a tired starter
     const tired = team.starters.find((p) => p.fitness < 60 && !p.injury);
     if (!tired) continue;
     const replacement = pickBenchReplacement(team, tired);
@@ -748,11 +616,9 @@ function performSub(
   team.bench.push(outPlayer);
   team.subsUsed++;
 
-  // Finalise outPlayer's stats minute count
   const outStats = getPlayerStats(team, outPlayer);
   if (outStats) outStats.minutesPlayed = state.minute;
 
-  // Initialise inPlayer's stats
   const inStats = getPlayerStats(team, inPlayer);
   if (inStats) inStats.minutesPlayed = 0;
 
@@ -889,7 +755,6 @@ function computePressure(
   attackerPos: Position,
   rng: RNG,
 ): number {
-  // Count nearby defenders in the same zone
   const group = positionGroup(attackerPos);
   const nearby = defending.starters.filter((p) => {
     if (p.injury) return false;
@@ -899,7 +764,6 @@ function computePressure(
     if (group === 'MID') return defGroup === 'MID';
     return false;
   });
-  // More defenders = more pressure
   const base = nearby.length * 0.15;
   const noise = rng.next() * 0.2;
   return clamp(base + noise + defending.tactic.pressIntensity * 0.1, 0, 1);
@@ -915,7 +779,6 @@ function findRecentAssist(
   state: MatchState,
   clubId: string,
 ): { player: Player } | null {
-  // Look at last 3 events for a completed pass from a teammate
   const team = state.home.club.id === clubId ? state.home : state.away;
   for (let i = state.events.length - 1; i >= Math.max(0, state.events.length - 3); i--) {
     const ev = state.events[i];
@@ -923,8 +786,6 @@ function findRecentAssist(
     if (ev.type === 'Interception' || ev.type === 'Tackle') return null;
     if (ev.type === 'Chance' || ev.type === 'Shot' || ev.type === 'ShotOnTarget') continue;
   }
-  // Simple: pick the last passer who isn't the scorer — but we didn't track that.
-  // Use a lightweight heuristic: the most creative starter.
   const candidates = team.starters.filter(
     (p) => !p.injury && (p.attributes.mental.vision + p.attributes.technical.shortPassing) > 110,
   );
@@ -974,12 +835,10 @@ function applyPostMatchCondition(
   const newFatigue = clamp(p.fatigue + minutes * 0.4, 0, 100);
   const newSharpness = clamp(p.sharpness + minutes * 0.15, 0, 100);
 
-  // Form: based on match rating (6.0 baseline)
   const rating = stats?.rating ?? 6.0;
   const formDelta = (rating - 6.5) * 0.4;
   const newForm = clamp(p.form + formDelta, -5, 5);
 
-  // Confidence
   const confDelta = rating > 7.0 ? 2 : rating < 5.5 ? -2 : 0;
   const newConfidence = clamp(p.confidence + confDelta, 0, 100);
 
@@ -1007,7 +866,6 @@ function buildReport(
   state.home.stats.possession = Math.round((state.home.stats.passes / totalPasses) * 100);
   state.away.stats.possession = 100 - state.home.stats.possession;
 
-  // Finalise minutes played for starters
   for (const team of [state.home, state.away]) {
     for (const p of team.starters) {
       const s = team.playerStats.get(p.id);
@@ -1019,14 +877,12 @@ function buildReport(
     }
   }
 
-  // Compute ratings
   for (const team of [state.home, state.away]) {
     for (const s of team.playerStats.values()) {
       s.rating = computeRating(s);
     }
   }
 
-  // Man of the match: highest rating on winning team; if draw, either
   const allStats = [
     ...Array.from(state.home.playerStats.values()),
     ...Array.from(state.away.playerStats.values()),
@@ -1063,11 +919,9 @@ function computeRating(s: PlayerMatchStats): number {
   rating -= s.foulsCommitted * 0.1;
   rating -= s.yellowCards * 0.2;
   rating -= s.redCards * 1.5;
-  // Pass accuracy contribution
   if (s.passesAttempted > 5) {
     const acc = s.passesCompleted / s.passesAttempted;
     rating += (acc - 0.7) * 1.0;
   }
-  // Clamp
   return clamp(round(rating, 1), 1.0, 10.0);
 }
