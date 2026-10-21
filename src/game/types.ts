@@ -76,8 +76,8 @@ export interface Attributes {
 export interface PlayerContract {
   clubId: string;
   weeklyWage: number;
-  startDate: string; // ISO date
-  endDate: string;   // ISO date
+  startDate: string;
+  endDate: string;
   squadRole: PlayerStatus;
   signingBonus: number;
   appearanceBonus: number;
@@ -95,7 +95,7 @@ export interface PlayerSeasonStats {
   averageRating: number;
   yellowCards: number;
   redCards: number;
-  cleanSheets: number; // for GK/DEF
+  cleanSheets: number;
 }
 
 export interface Player {
@@ -104,7 +104,7 @@ export interface Player {
   surname: string;
   displayName: string;
   nationality: Nationality;
-  dateOfBirth: string; // ISO date
+  dateOfBirth: string;
   age: number;
   foot: Foot;
   heightCm: number;
@@ -115,34 +115,28 @@ export interface Player {
   personality: Personality;
 
   attributes: Attributes;
-  potential: number;   // 1-100 hidden cap
-  overall: number;     // computed from attributes + position
+  potential: number;
+  overall: number;
 
-  // Condition
-  fitness: number;     // 0-100 (match fitness)
-  fatigue: number;     // 0-100 (accumulated tiredness)
-  sharpness: number;   // 0-100 (match readiness)
-  morale: number;      // 0-100
-  confidence: number;  // 0-100
+  fitness: number;
+  fatigue: number;
+  sharpness: number;
+  morale: number;
+  confidence: number;
 
-  // Injury
   injury: Injury | null;
 
-  // Career
   clubId: string;
   contract: PlayerContract;
   status: PlayerStatus;
-  form: number; // -5 to +5 rolling
+  form: number;
 
-  // Season history
   seasonStats: PlayerSeasonStats[];
 
-  // Career totals (derived but persisted for history)
   careerAppearances: number;
   careerGoals: number;
   careerAssists: number;
 
-  // Development
   developmentPoints: number;
   trainingFocus: TrainingFocus | null;
 }
@@ -162,16 +156,16 @@ export interface Club {
   id: string;
   name: string;
   shortName: string;
-  abbreviation: string; // 3 letters
+  abbreviation: string;
   country: Nationality;
   stadium: string;
-  reputation: number;   // 1-100
-  finances: number;     // abstract, 1-100
-  trainingFacilities: number; // 1-100
-  youthFacilities: number;    // 1-100
-  primaryColor: string;  // hex
-  secondaryColor: string; // hex
-  formation: string; // e.g. '4-3-3'
+  reputation: number;
+  finances: number;
+  trainingFacilities: number;
+  youthFacilities: number;
+  primaryColor: string;
+  secondaryColor: string;
+  formation: string;
   tactic: TacticStyle;
   managerName: string;
   leagueId: string;
@@ -190,7 +184,7 @@ export interface League {
   country: Nationality;
   tier: number;
   clubIds: string[];
-  season: string; // e.g. '2025/26'
+  season: string;
 }
 
 export interface StandingRow {
@@ -213,11 +207,10 @@ export interface Fixture {
   matchday: number;
   homeClubId: string;
   awayClubId: string;
-  date: string; // ISO date
+  date: string;
   played: boolean;
   homeGoals: number | null;
   awayGoals: number | null;
-  // If user's club is involved, store match report id
   matchReportId: string | null;
 }
 
@@ -239,9 +232,9 @@ export interface MatchEvent {
   clubId: string;
   playerId: string | null;
   playerName: string | null;
-  secondaryPlayerId: string | null; // assist, subbed player, etc.
+  secondaryPlayerId: string | null;
   secondaryPlayerName: string | null;
-  description: string; // human-readable commentary
+  description: string;
 }
 
 export interface PlayerMatchStats {
@@ -266,13 +259,13 @@ export interface PlayerMatchStats {
   yellowCards: number;
   redCards: number;
   saves: number;
-  rating: number; // 1.0 - 10.0
-  matchRatingRaw: number; // internal accumulator
+  rating: number;
+  matchRatingRaw: number;
 }
 
 export interface TeamMatchStats {
   clubId: string;
-  possession: number; // percentage
+  possession: number;
   shots: number;
   shotsOnTarget: number;
   passes: number;
@@ -296,7 +289,7 @@ export interface MatchReport {
   playerStats: PlayerMatchStats[];
   homeTeamStats: TeamMatchStats;
   awayTeamStats: TeamMatchStats;
-  manOfTheMatch: string | null; // playerId
+  manOfTheMatch: string | null;
   playedDate: string;
   competition: string;
 }
@@ -338,18 +331,18 @@ export interface CareerCreation {
   shirtNumber: number;
   personality: Personality;
   pathway: 'Youth' | 'LowerLeague' | 'Established' | 'Custom';
-  startingClubId: string | null; // for Custom
+  startingClubId: string | null;
 }
 
 export interface GameDate {
   year: number;
-  month: number; // 1-12
-  day: number;   // 1-31
+  month: number;
+  day: number;
 }
 
 export interface SeasonState {
   season: string;
-  startDate: string; // ISO
+  startDate: string;
   endDate: string;
   currentMatchday: number;
   totalMatchdays: number;
@@ -361,29 +354,25 @@ export interface CareerSave {
   createdAt: string;
   updatedAt: string;
   seed: number;
-  rngState: number; // persisted RNG counter
+  rngState: number;
 
-  // World
   leagues: League[];
   clubs: Club[];
-  players: Player[]; // ALL players including user
+  players: Player[];
   fixtures: Fixture[];
-  standings: Record<string, StandingRow[]>; // leagueId -> rows
+  standings: Record<string, StandingRow[]>;
   matchReports: MatchReport[];
 
-  // User
   userPlayerId: string;
-  currentDate: string; // ISO
+  currentDate: string;
   currentSeason: string;
   seasonState: SeasonState;
   newsFeed: NewsItem[];
 
-  // Pending user decisions
   pendingTraining: TrainingSession | null;
   lastTrainingResult: TrainingSession | null;
   trainingPlan?: { focus: TrainingFocus; intensity: TrainingIntensity } | null;
 
-  // Match in progress (if user is watching live)
   activeMatchId: string | null;
 }
 
