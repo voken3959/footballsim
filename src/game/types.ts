@@ -96,6 +96,19 @@ export interface PlayerSeasonStats {
   yellowCards: number;
   redCards: number;
   cleanSheets: number;
+  
+  // Detailed stats
+  shots: number;
+  shotsOnTarget: number;
+  passesAttempted: number;
+  passesCompleted: number;
+  keyPasses: number;
+  dribblesAttempted: number;
+  dribblesCompleted: number;
+  tackles: number;
+  interceptions: number;
+  clearances: number;
+  saves: number;
 }
 
 export interface Player {
