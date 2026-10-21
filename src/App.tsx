@@ -9,6 +9,7 @@ import MatchScreen from './screens/MatchScreen';
 import LeagueScreen from './screens/LeagueScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import MailScreen from './screens/MailScreen';
+import StatsScreen from './screens/StatsScreen';
 import LoadScreen from './screens/LoadScreen';
 
 type Screen = NavKey | 'wizard' | 'load';
@@ -60,6 +61,7 @@ export default function App() {
       {screen === 'match' && <MatchScreen />}
       {screen === 'league' && <LeagueScreen />}
       {screen === 'profile' && <ProfileScreen />}
+      {screen === 'stats' && <StatsScreen />}
       {screen === 'mail' && <MailScreen />}
       {screen === 'settings' && (
         <div className="panel p-6">
