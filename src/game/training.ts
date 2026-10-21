@@ -19,10 +19,10 @@ const INTENSITY_MULT: Record<TrainingIntensity, number> = {
 };
 
 const INTENSITY_FATIGUE: Record<TrainingIntensity, number> = {
-  Rest: -20,
-  Light: -5,
-  Normal: 8,
-  Intensive: 20,
+  Rest: -30,
+  Light: -10,
+  Normal: 2,
+  Intensive: 12,
 };
 
 const INTENSITY_INJURY: Record<TrainingIntensity, number> = {
@@ -36,10 +36,6 @@ const INTENSITY_INJURY: Record<TrainingIntensity, number> = {
 // PREVIEW
 // ------------------------------------------------------------
 
-/**
- * Build a training session preview for the UI.
- * Shows expected gains, fatigue cost, and injury risk without committing.
- */
 export function previewTraining(
   player: Player,
   focus: TrainingFocus,
@@ -94,22 +90,16 @@ function estimateGains(
 // APPLY
 // ------------------------------------------------------------
 
-/**
- * Apply a training session to a player. Mutates a copy and returns it.
- * This is the source of truth for post-training player state.
- */
 export function applyTraining(
   player: Player,
   session: TrainingSession,
   coachingQuality: number,
   rng: RNG,
 ): { player: Player; deltas: { key: string; from: number; to: number }[]; injured: boolean } {
-  // 1. Injury check
   const riskMult = injuryRiskMultiplier(player);
   const finalRisk = clamp(INTENSITY_INJURY[session.intensity] * riskMult, 0, 0.2);
   const injured = rng.chance(finalRisk);
 
-  // 2. Attribute progression (skipped if injured — training is cut short)
   let attributes = player.attributes;
   let deltas: { key: string; from: number; to: number }[] = [];
 
@@ -127,11 +117,10 @@ export function applyTraining(
     deltas = result.deltas;
   }
 
-  // 3. Fitness / fatigue / sharpness updates
   const fatigueDelta = INTENSITY_FATIGUE[session.intensity];
-  const fitnessDelta = session.intensity === 'Rest' ? 15
-    : session.intensity === 'Light' ? 8
-    : session.intensity === 'Normal' ? -3
+  const fitnessDelta = session.intensity === 'Rest' ? 20
+    : session.intensity === 'Light' ? 10
+    : session.intensity === 'Normal' ? 1
     : -10;
   const sharpnessDelta = session.intensity === 'Rest' ? -2
     : session.intensity === 'Light' ? 1
@@ -143,7 +132,6 @@ export function applyTraining(
   const newSharpness = clamp(player.sharpness + sharpnessDelta, 0, 100);
   const newOverall = computeOverall(attributes, player.primaryPosition);
 
-  // 4. Injury assignment
   let injury = player.injury;
   if (injured && !injury) {
     injury = rollInjury(rng, session.intensity);
@@ -168,7 +156,6 @@ export function applyTraining(
 // ------------------------------------------------------------
 
 function injuryRiskMultiplier(player: Player): number {
-  // Higher fatigue, lower natural fitness, prior injury → higher risk
   const fatigueFactor = 1 + (player.fatigue / 100) * 1.5;
   const fitnessFactor = 1 + (100 - player.attributes.physical.naturalFitness) * 0.01;
   const priorInjury = player.injury ? 1.3 : 1.0;
@@ -184,19 +171,16 @@ function rollInjury(rng: RNG, intensity: TrainingIntensity): Player['injury'] {
   let daysRemaining: number;
 
   if (severityRoll < baseSeverity) {
-    // Minor
     const types = ['Minor knock', 'Muscle tightness', 'Dead leg', 'Ankle sprain'];
     type = rng.pick(types);
     severity = 'Minor';
     daysRemaining = rng.int(2, 7);
   } else if (severityRoll < baseSeverity + 0.55) {
-    // Moderate
     const types = ['Hamstring strain', 'Groin strain', 'Calf strain', 'Ankle injury'];
     type = rng.pick(types);
     severity = 'Moderate';
     daysRemaining = rng.int(14, 35);
   } else {
-    // Severe
     const types = ['Knee ligament injury', 'Broken foot', 'Fractured metatarsal', 'Hip injury'];
     type = rng.pick(types);
     severity = 'Severe';
@@ -215,10 +199,6 @@ function rollInjury(rng: RNG, intensity: TrainingIntensity): Player['injury'] {
 // DAILY TICK
 // ------------------------------------------------------------
 
-/**
- * Advance injury day counters and light recovery. Called once per game day.
- * Returns the updated player. If injury just cleared, sets a brief sharpness hit.
- */
 export function advancePlayerDay(player: Player, rng: RNG): Player {
   let injury = player.injury;
   let fitness = player.fitness;
@@ -229,20 +209,18 @@ export function advancePlayerDay(player: Player, rng: RNG): Player {
     const newDays = injury.daysRemaining - 1;
     if (newDays <= 0) {
       injury = null;
-      // Coming back from injury — rusty
       sharpness = clamp(sharpness - 15, 0, 100);
       fitness = clamp(fitness - 10, 0, 100);
     } else {
       injury = { ...injury, daysRemaining: newDays };
-      // Light recovery while injured
       fatigue = clamp(fatigue - 3, 0, 100);
       fitness = clamp(fitness - 0.5, 0, 100);
     }
   } else {
     // Natural daily recovery
-    fatigue = clamp(fatigue - 2.5, 0, 100);
-    fitness = clamp(fitness + 1.5, 0, 100);
-    sharpness = clamp(sharpness - 0.3, 0, 100); // sharpness decays slightly without matches
+    fatigue = clamp(fatigue - 6, 0, 100);
+    fitness = clamp(fitness + 5, 0, 100);
+    sharpness = clamp(sharpness - 0.5, 0, 100);
   }
 
   return {
@@ -258,10 +236,6 @@ export function advancePlayerDay(player: Player, rng: RNG): Player {
 // SEASON-END AGEING
 // ------------------------------------------------------------
 
-/**
- * Called once per season end. Applies age decline and increments age.
- * Returns the updated player and any deltas for the history log.
- */
 export function applySeasonEndAgeing(
   player: Player,
   newAge: number,
