@@ -294,23 +294,6 @@ export interface MatchReport {
   competition: string;
 }
 
-// Add this near the other interfaces
-export interface Email {
-  id: string;
-  date: string;
-  sender: string;
-  subject: string;
-  body: string;
-  read: boolean;
-  type: 'Manager' | 'Agent' | 'Transfer' | 'News';
-}
-
-export interface CareerSave {
-  // ... existing fields ...
-  newsFeed: NewsItem[];
-  emails: Email[];
-  // ...
-}
 // ============================================================
 // TRAINING
 // ============================================================
@@ -365,6 +348,16 @@ export interface SeasonState {
   totalMatchdays: number;
 }
 
+export interface Email {
+  id: string;
+  date: string;
+  sender: string;
+  subject: string;
+  body: string;
+  read: boolean;
+  type: 'Manager' | 'Agent' | 'Transfer' | 'News';
+}
+
 export interface CareerSave {
   schemaVersion: number;
   id: string;
@@ -385,6 +378,7 @@ export interface CareerSave {
   currentSeason: string;
   seasonState: SeasonState;
   newsFeed: NewsItem[];
+  emails: Email[];
 
   pendingTraining: TrainingSession | null;
   lastTrainingResult: TrainingSession | null;
