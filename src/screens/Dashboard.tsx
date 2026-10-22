@@ -218,4 +218,101 @@ export default function Dashboard({ onNavigate }: Props) {
               <StatSmall value={seasonStats.appearances} label="Apps" />
               <StatSmall value={seasonStats.goals} label="Goals" />
               <StatSmall value={seasonStats.assists} label="Assists" />
-              <StatSmall value={seasonStats.a
+              <StatSmall value={seasonStats.averageRating.toFixed(2)} label="Rating" highlight />
+            </div>
+          ) : (
+            <div className="text-sm text-txt-muted">No appearances yet.</div>
+          )}
+        </div>
+
+        <div className="panel p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="label">Recent Results</div>
+            <button className="text-xs font-bold text-accent hover:text-accent-soft transition-colors" onClick={() => onNavigate('match')}>
+              All Matches →
+            </button>
+          </div>
+          {recentReports.length === 0 ? (
+            <div className="text-sm text-txt-muted">No matches played yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {recentReports.map((r) => {
+                const isUserHome = r.homeClubId === club.id;
+                const oppId = isUserHome ? r.awayClubId : r.homeClubId;
+                const opp = save.clubs.find((c) => c.id === oppId);
+                const userGoals = isUserHome ? r.homeGoals : r.awayGoals;
+                const oppGoals = isUserHome ? r.awayGoals : r.homeGoals;
+                const result = userGoals > oppGoals ? 'W' : userGoals < oppGoals ? 'L' : 'D';
+                return (
+                  <div key={r.id} className="flex items-center gap-3 text-xs p-2 rounded-md hover:bg-bg-hover transition-colors">
+                    <span className={`w-5 h-5 flex items-center justify-center rounded font-black ${result === 'W' ? 'bg-accent/20 text-accent-soft' : result === 'D' ? 'bg-txt-dim/20 text-txt-muted' : 'bg-state-loss/20 text-state-loss'}`}>
+                      {result}
+                    </span>
+                    <span className="text-txt-muted font-medium w-8">{isUserHome ? 'vs' : '@'}</span>
+                    <span className="text-txt font-semibold truncate flex-1">{opp?.shortName ?? '—'}</span>
+                    <span className="text-white font-black tabular-nums">{userGoals}–{oppGoals}</span>
+                    <span className="text-txt-dim font-medium w-12 text-right">{formatShort(r.playedDate)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-3 flex-wrap pt-2">
+        <button className="btn flex-1 md:flex-none" onClick={() => advanceOneDay()} disabled={loading}>
+          {loading ? 'Advancing…' : 'Advance 1 day'}
+        </button>
+        <button className="btn btn-primary flex-1 md:flex-none" onClick={() => advanceToNextMatch()} disabled={loading}>
+          {loading ? 'Advancing…' : 'Continue to next match'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ConditionBar({ label, value, color, inverted }: { label: string; value: number; color: string; inverted?: boolean }) {
+  const display = inverted ? 100 - value : value;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1.5">
+        <span className="label">{label}</span>
+        <span className="text-xs font-bold text-txt tabular-nums">{value}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-bg-border/50 overflow-hidden">
+        <div
+          className={`h-full rounded-full ${color} transition-all duration-500`}
+          style={{ width: `${display}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-bg-card border border-bg-border rounded-xl p-3.5 shadow-sm hover:border-bg-hover transition-colors">
+      <div className="label mb-1">{label}</div>
+      <div className="text-sm font-bold text-txt truncate">{value}</div>
+    </div>
+  );
+}
+
+function StatSmall({ value, label, highlight }: { value: number | string; label: string; highlight?: boolean }) {
+  return (
+    <div>
+      <div className={`text-2xl font-black tabular-nums tracking-tight ${highlight ? 'text-accent-soft' : 'text-white'}`}>{value}</div>
+      <div className="label mt-1">{label}</div>
+    </div>
+  );
+}
+
+function formatForm(form: number): string {
+  if (form > 2.5) return 'Excellent';
+  if (form > 1.0) return 'Good';
+  if (form > -1.0) return 'Average';
+  if (form > -2.5) return 'Poor';
+  return 'Very poor';
+}
