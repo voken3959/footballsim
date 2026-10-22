@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useCareerStore } from '../store/careerStore';
 import { Crest } from '../components/Layout';
 import { formatDate, formatShort } from '../game/dates';
 import { selectMatchdaySquad } from '../game/squadSelection';
 import { MatchSimulation } from '../game/matchEngine';
 import { RNG } from '../game/rng';
-import type { MatchReport, MatchEvent, Player, MatchSimOptions } from '../game/types';
+import type { MatchReport, MatchEvent, Player } from '../game/types';
 
 export default function MatchScreen() {
   const lastReport = useCareerStore((s) => s.lastMatchReport);
@@ -113,32 +113,24 @@ function LiveMatchView({ report, onClose }: { report: MatchReport, onClose: () =
 }
 
 function PitchVisualisation({ report, user }: { report: MatchReport, user: Player }) {
-  // This is a simplified representation. In a real 2D engine we'd have x/y coordinates.
-  // Here we just assign players to static formation slots and highlight the one with the ball.
   const save = useCareerStore(s => s.save)!;
   const homeClub = save.clubs.find(c => c.id === report.homeClubId)!;
   const awayClub = save.clubs.find(c => c.id === report.awayClubId)!;
   
-  // Fake positions for visualisation
   const homeFormation = ['GK', 'LB', 'CB', 'CB', 'RB', 'CM', 'CM', 'CAM', 'LW', 'ST', 'RW'];
   const awayFormation = ['GK', 'RB', 'CB', 'CB', 'LB', 'CDM', 'CDM', 'CAM', 'RW', 'ST', 'LW'];
 
   return (
     <div className="panel p-4 bg-[#1b5e20] border-4 border-[#2e7d32] rounded-xl relative overflow-hidden aspect-[3/4] md:aspect-video">
-      {/* Pitch Markings */}
       <div className="absolute inset-4 border-2 border-white/20 rounded-sm" />
       <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-white/20" />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 border-2 border-white/20 rounded-full" />
       
-      {/* Home Team (Left) */}
       <div className="absolute inset-y-0 left-0 w-1/2 p-2">
         <div className="relative w-full h-full">
           {homeFormation.map((pos, i) => (
              <div key={`h-${i}`} className={`absolute w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md ${pos === 'GK' ? 'bg-yellow-400 text-black' : 'bg-blue-600 text-white'}`}
-               style={{
-                 top: `${10 + (i % 5) * 20}%`,
-                 left: `${15 + Math.floor(i / 5) * 30}%`,
-               }}
+               style={{ top: `${10 + (i % 5) * 20}%`, left: `${15 + Math.floor(i / 5) * 30}%` }}
              >
                {pos}
              </div>
@@ -146,15 +138,11 @@ function PitchVisualisation({ report, user }: { report: MatchReport, user: Playe
         </div>
       </div>
 
-      {/* Away Team (Right) */}
       <div className="absolute inset-y-0 right-0 w-1/2 p-2">
         <div className="relative w-full h-full">
           {awayFormation.map((pos, i) => (
              <div key={`a-${i}`} className={`absolute w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md ${pos === 'GK' ? 'bg-yellow-400 text-black' : 'bg-red-600 text-white'}`}
-               style={{
-                 top: `${10 + (i % 5) * 20}%`,
-                 right: `${15 + Math.floor(i / 5) * 30}%`,
-               }}
+               style={{ top: `${10 + (i % 5) * 20}%`, right: `${15 + Math.floor(i / 5) * 30}%` }}
              >
                {pos}
              </div>
@@ -181,12 +169,10 @@ function MatchdayView({ onStartLive }: { onStartLive: (report: MatchReport) => v
 
   const playNextMatch = async () => {
     setPhase('fast-forward');
-    await advanceToNextMatch(); // Get to the day before the match
+    await advanceToNextMatch(); 
     
-    // We need to simulate this specific match live
     setPhase('simulating');
     
-    // The game state hasn't been saved with the match result yet, we simulate it now.
     const oppId = next?.homeClubId === club.id ? next?.awayClubId : next?.homeClubId;
     const oppClub = save.clubs.find(c => c.id === oppId)!;
     
@@ -204,18 +190,15 @@ function MatchdayView({ onStartLive }: { onStartLive: (report: MatchReport) => v
 
     const sim = new MatchSimulation(opts);
     
-    // Step through the match minute by minute
     const interval = setInterval(() => {
       const finished = sim.tick();
-      
-      // Build a partial report for the UI to render
       const currentReport = sim.buildReport(opts).report;
       onStartLive(currentReport);
       
       if (finished) {
         clearInterval(interval);
       }
-    }, 150); // 150ms per minute = ~15 seconds per match
+    }, 150); 
   };
 
   const opponent = next ? save.clubs.find((c) => c.id === (next.homeClubId === club.id ? next.awayClubId : next.homeClubId)) : null;
@@ -341,7 +324,6 @@ function MatchdayView({ onStartLive }: { onStartLive: (report: MatchReport) => v
   );
 }
 
-// Keep MatchReportView as it was for the final summary
 function MatchReportView({ report, onContinue }: { report: MatchReport; onContinue: () => void }) {
   const save = useCareerStore((s) => s.save)!;
   const user = useCareerStore((s) => s.userPlayer())!;
