@@ -10,7 +10,6 @@ export default function MatchScreen() {
   const lastReport = useCareerStore((s) => s.lastMatchReport);
   const clearResults = useCareerStore((s) => s.clearResults);
   
-  // Initialize state based on whether we already have a report when mounting
   const [viewState, setViewState] = useState<'matchday' | 'live' | 'report'>(
     lastReport ? 'report' : 'matchday'
   );
@@ -18,7 +17,6 @@ export default function MatchScreen() {
   const prevReportRef = useRef(lastReport);
 
   useEffect(() => {
-    // If a new report just came in while we are on this screen, go live!
     if (lastReport && lastReport !== prevReportRef.current) {
       setViewState('live');
       prevReportRef.current = lastReport;
@@ -48,11 +46,10 @@ function LiveMatchView({ report, onFinish }: { report: MatchReport; onFinish: ()
   const homeClub = save.clubs.find((c) => c.id === report.homeClubId)!;
   const awayClub = save.clubs.find((c) => c.id === report.awayClubId)!;
   
-  // Find max minute from events (in case of stoppage time)
   const maxMinute = Math.max(...report.events.map((e) => e.minute), 90);
   
   const [minute, setMinute] = useState(0);
-  const [speed, setSpeed] = useState(40); // ms per minute
+  const [speed, setSpeed] = useState(40);
   const [isPaused, setIsPaused] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
 
@@ -72,19 +69,23 @@ function LiveMatchView({ report, onFinish }: { report: MatchReport; onFinish: ()
     return () => clearInterval(timer);
   }, [speed, isPaused, maxMinute]);
 
-  // Auto scroll commentary
   useEffect(() => {
     if (feedRef.current) {
       feedRef.current.scrollTop = feedRef.current.scrollHeight;
     }
   }, [minute]);
 
+  // Filter all events up to the current minute
   const visibleEvents = report.events.filter((e) => e.minute <= minute);
   
+  // FILTER FOR HIGHLIGHTS ONLY
+  const highlightEvents = visibleEvents.filter(e => 
+    ['Goal', 'PenaltyGoal', 'RedCard', 'YellowCard', 'Substitution', 'Injury', 'ShotOnTarget', 'ShotOffTarget', 'Save', 'Corner', 'PenaltyMiss'].includes(e.type)
+  );
+
   const homeGoals = visibleEvents.filter((e) => (e.type === 'Goal' || e.type === 'PenaltyGoal') && e.clubId === report.homeClubId).length;
   const awayGoals = visibleEvents.filter((e) => (e.type === 'Goal' || e.type === 'PenaltyGoal') && e.clubId === report.awayClubId).length;
 
-  // Live stats calculation
   const homeShots = visibleEvents.filter((e) => (e.type === 'Shot' || e.type === 'ShotOnTarget' || e.type === 'Goal' || e.type === 'ShotOffTarget') && e.clubId === report.homeClubId).length;
   const awayShots = visibleEvents.filter((e) => (e.type === 'Shot' || e.type === 'ShotOnTarget' || e.type === 'Goal' || e.type === 'ShotOffTarget') && e.clubId === report.awayClubId).length;
   const totalShots = Math.max(1, homeShots + awayShots);
@@ -138,7 +139,7 @@ function LiveMatchView({ report, onFinish }: { report: MatchReport; onFinish: ()
         {/* Commentary Feed */}
         <div className="md:col-span-2 panel p-0 flex flex-col h-[400px]">
           <div className="px-4 py-2 border-b border-bg-border flex justify-between items-center bg-bg-card rounded-t-lg">
-            <span className="label">Live Commentary</span>
+            <span className="label">Match Highlights</span>
             <button 
               className="text-xs font-semibold px-2 py-1 rounded bg-bg-border hover:bg-txt-dim text-txt transition-colors"
               onClick={() => setIsPaused(!isPaused)}
@@ -147,17 +148,17 @@ function LiveMatchView({ report, onFinish }: { report: MatchReport; onFinish: ()
             </button>
           </div>
           <div ref={feedRef} className="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col justify-end bg-bg-panel/30">
-            {visibleEvents.length === 0 && (
+            {highlightEvents.length === 0 && (
               <div className="text-center text-txt-muted py-8 italic">
                 Waiting for kickoff...
               </div>
             )}
-            {visibleEvents.map((e, i) => (
+            {highlightEvents.map((e, i) => (
               <div key={i} className={`flex gap-3 text-sm p-2 rounded-md border ${
                 e.type === 'Goal' || e.type === 'PenaltyGoal' ? 'bg-state-win/10 border-state-win/30' :
                 e.type === 'RedCard' ? 'bg-state-loss/10 border-state-loss/30' :
                 e.type === 'YellowCard' ? 'bg-state-warn/10 border-state-warn/30' :
-                'bg-transparent border-transparent'
+                'bg-bg-card/50 border-transparent'
               }`}>
                 <span className="text-txt-dim font-mono text-xs w-8 shrink-0 pt-0.5">{e.minute}'</span>
                 <span className={`${e.clubId === report.homeClubId ? 'text-txt font-medium' : 'text-txt-muted'}`}>
