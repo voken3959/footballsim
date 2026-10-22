@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useCareerStore } from '../store/careerStore';
 import { Crest } from '../components/Layout';
 import { formatDate, formatShort } from '../game/dates';
@@ -9,11 +9,203 @@ import type { MatchReport, MatchEvent, Player } from '../game/types';
 export default function MatchScreen() {
   const lastReport = useCareerStore((s) => s.lastMatchReport);
   const clearResults = useCareerStore((s) => s.clearResults);
+  
+  // Initialize state based on whether we already have a report when mounting
+  const [viewState, setViewState] = useState<'matchday' | 'live' | 'report'>(
+    lastReport ? 'report' : 'matchday'
+  );
+  
+  const prevReportRef = useRef(lastReport);
 
-  if (lastReport) {
-    return <MatchReportView report={lastReport} onContinue={clearResults} />;
+  useEffect(() => {
+    // If a new report just came in while we are on this screen, go live!
+    if (lastReport && lastReport !== prevReportRef.current) {
+      setViewState('live');
+      prevReportRef.current = lastReport;
+    }
+  }, [lastReport]);
+
+  if (viewState === 'live' && lastReport) {
+    return <LiveMatchView report={lastReport} onFinish={() => setViewState('report')} />;
   }
+
+  if (viewState === 'report' && lastReport) {
+    return <MatchReportView report={lastReport} onContinue={() => {
+      clearResults();
+      setViewState('matchday');
+    }} />;
+  }
+
   return <MatchdayView />;
+}
+
+// ------------------------------------------------------------
+// LIVE MATCH VIEW
+// ------------------------------------------------------------
+
+function LiveMatchView({ report, onFinish }: { report: MatchReport; onFinish: () => void }) {
+  const save = useCareerStore((s) => s.save)!;
+  const homeClub = save.clubs.find((c) => c.id === report.homeClubId)!;
+  const awayClub = save.clubs.find((c) => c.id === report.awayClubId)!;
+  
+  // Find max minute from events (in case of stoppage time)
+  const maxMinute = Math.max(...report.events.map((e) => e.minute), 90);
+  
+  const [minute, setMinute] = useState(0);
+  const [speed, setSpeed] = useState(40); // ms per minute
+  const [isPaused, setIsPaused] = useState(false);
+  const feedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (minute >= maxMinute || isPaused) return;
+
+    const timer = setInterval(() => {
+      setMinute((m) => {
+        if (m >= maxMinute) {
+          clearInterval(timer);
+          return maxMinute;
+        }
+        return m + 1;
+      });
+    }, speed);
+
+    return () => clearInterval(timer);
+  }, [speed, isPaused, maxMinute]);
+
+  // Auto scroll commentary
+  useEffect(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [minute]);
+
+  const visibleEvents = report.events.filter((e) => e.minute <= minute);
+  
+  const homeGoals = visibleEvents.filter((e) => (e.type === 'Goal' || e.type === 'PenaltyGoal') && e.clubId === report.homeClubId).length;
+  const awayGoals = visibleEvents.filter((e) => (e.type === 'Goal' || e.type === 'PenaltyGoal') && e.clubId === report.awayClubId).length;
+
+  // Live stats calculation
+  const homeShots = visibleEvents.filter((e) => (e.type === 'Shot' || e.type === 'ShotOnTarget' || e.type === 'Goal' || e.type === 'ShotOffTarget') && e.clubId === report.homeClubId).length;
+  const awayShots = visibleEvents.filter((e) => (e.type === 'Shot' || e.type === 'ShotOnTarget' || e.type === 'Goal' || e.type === 'ShotOffTarget') && e.clubId === report.awayClubId).length;
+  const totalShots = Math.max(1, homeShots + awayShots);
+
+  const homeCorners = visibleEvents.filter((e) => e.type === 'Corner' && e.clubId === report.homeClubId).length;
+  const awayCorners = visibleEvents.filter((e) => e.type === 'Corner' && e.clubId === report.awayClubId).length;
+
+  return (
+    <div className="space-y-4 max-w-4xl mx-auto pb-10">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div className="label text-accent-soft">Live Match</div>
+          <h1 className="text-xl font-bold mt-1">{homeClub.shortName} vs {awayClub.shortName}</h1>
+        </div>
+        <div className="flex gap-2 bg-bg-card p-1 rounded-md border border-bg-border">
+          <button className={`px-3 py-1 rounded text-xs font-semibold ${speed === 80 ? 'bg-accent text-white' : 'text-txt-muted hover:text-txt'}`} onClick={() => setSpeed(80)}>1x</button>
+          <button className={`px-3 py-1 rounded text-xs font-semibold ${speed === 40 ? 'bg-accent text-white' : 'text-txt-muted hover:text-txt'}`} onClick={() => setSpeed(40)}>2x</button>
+          <button className={`px-3 py-1 rounded text-xs font-semibold ${speed === 10 ? 'bg-accent text-white' : 'text-txt-muted hover:text-txt'}`} onClick={() => setSpeed(10)}>4x</button>
+          <button className="px-3 py-1 rounded text-xs font-semibold text-txt-muted hover:text-txt" onClick={() => setMinute(maxMinute)}>Skip</button>
+        </div>
+      </div>
+
+      <div className="panel p-6 flex flex-col items-center justify-center relative overflow-hidden">
+        <div className="absolute top-2 left-0 right-0 flex justify-center">
+          <span className="text-sm font-bold text-txt-dim tabular-nums">{minute}'</span>
+        </div>
+        
+        <div className="flex items-center gap-6 mt-4 w-full justify-center">
+          <div className="flex items-center gap-3 flex-1 justify-end">
+            <span className="text-lg font-bold text-txt text-right hidden sm:block">{homeClub.shortName}</span>
+            <Crest club={homeClub} size={48} />
+          </div>
+          <div className="text-4xl font-black tabular-nums text-txt bg-bg-card px-6 py-2 rounded-lg border border-bg-border shadow-inner">
+            {homeGoals} - {awayGoals}
+          </div>
+          <div className="flex items-center gap-3 flex-1 justify-start">
+            <Crest club={awayClub} size={48} />
+            <span className="text-lg font-bold text-txt text-left hidden sm:block">{awayClub.shortName}</span>
+          </div>
+        </div>
+
+        <div className="w-full max-w-md mt-6 h-1.5 bg-bg-border rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-accent transition-all duration-300" 
+            style={{ width: `${(minute / maxMinute) * 100}%` }} 
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Commentary Feed */}
+        <div className="md:col-span-2 panel p-0 flex flex-col h-[400px]">
+          <div className="px-4 py-2 border-b border-bg-border flex justify-between items-center bg-bg-card rounded-t-lg">
+            <span className="label">Live Commentary</span>
+            <button 
+              className="text-xs font-semibold px-2 py-1 rounded bg-bg-border hover:bg-txt-dim text-txt transition-colors"
+              onClick={() => setIsPaused(!isPaused)}
+            >
+              {isPaused ? 'Resume' : 'Pause'}
+            </button>
+          </div>
+          <div ref={feedRef} className="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col justify-end bg-bg-panel/30">
+            {visibleEvents.length === 0 && (
+              <div className="text-center text-txt-muted py-8 italic">
+                Waiting for kickoff...
+              </div>
+            )}
+            {visibleEvents.map((e, i) => (
+              <div key={i} className={`flex gap-3 text-sm p-2 rounded-md border ${
+                e.type === 'Goal' || e.type === 'PenaltyGoal' ? 'bg-state-win/10 border-state-win/30' :
+                e.type === 'RedCard' ? 'bg-state-loss/10 border-state-loss/30' :
+                e.type === 'YellowCard' ? 'bg-state-warn/10 border-state-warn/30' :
+                'bg-transparent border-transparent'
+              }`}>
+                <span className="text-txt-dim font-mono text-xs w-8 shrink-0 pt-0.5">{e.minute}'</span>
+                <span className={`${e.clubId === report.homeClubId ? 'text-txt font-medium' : 'text-txt-muted'}`}>
+                  {e.description}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Live Stats */}
+        <div className="panel p-4">
+          <div className="label mb-4">Match Stats</div>
+          <div className="space-y-4 text-sm">
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="font-bold text-txt">{homeShots}</span>
+                <span className="text-txt-muted uppercase tracking-wider text-[10px]">Shots</span>
+                <span className="font-bold text-txt">{awayShots}</span>
+              </div>
+              <div className="flex h-1 bg-bg-border rounded overflow-hidden">
+                <div className="h-full bg-accent" style={{ width: `${(homeShots / totalShots) * 100}%` }} />
+                <div className="h-full bg-txt-dim" style={{ width: `${(awayShots / totalShots) * 100}%` }} />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="font-bold text-txt">{homeCorners}</span>
+                <span className="text-txt-muted uppercase tracking-wider text-[10px]">Corners</span>
+                <span className="font-bold text-txt">{awayCorners}</span>
+              </div>
+              <div className="flex h-1 bg-bg-border rounded overflow-hidden">
+                <div className="h-full bg-accent" style={{ width: `${(homeCorners / Math.max(1, homeCorners + awayCorners)) * 100}%` }} />
+                <div className="h-full bg-txt-dim" style={{ width: `${(awayCorners / Math.max(1, homeCorners + awayCorners)) * 100}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {minute >= maxMinute && (
+        <button className="btn btn-primary w-full py-3 text-lg mt-4 animate-pulse" onClick={onFinish}>
+          Continue to Match Report
+        </button>
+      )}
+    </div>
+  );
 }
 
 // ------------------------------------------------------------
@@ -34,7 +226,7 @@ function MatchReportView({ report, onContinue }: { report: MatchReport; onContin
   const awayGoals = report.events.filter((e) => (e.type === 'Goal' || e.type === 'PenaltyGoal') && e.clubId === report.awayClubId);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-4xl mx-auto pb-10">
       <div>
         <div className="label text-accent-soft">Match report</div>
         <h1 className="text-xl font-bold mt-1">{homeClub.shortName} {report.homeGoals}–{report.awayGoals} {awayClub.shortName}</h1>
@@ -44,7 +236,7 @@ function MatchReportView({ report, onContinue }: { report: MatchReport; onContin
       <div className="panel p-4">
         <div className="flex items-center justify-around gap-3">
           <TeamHeader club={homeClub} />
-          <div className="text-4xl md:text-5xl font-black tabular-nums text-txt">{report.homeGoals}–{report.awayGoals}</div>
+          <div className="text-4xl md:text-5xl font-black tabular-nums text-txt bg-bg-card px-6 py-2 rounded-lg border border-bg-border">{report.homeGoals}–{report.awayGoals}</div>
           <TeamHeader club={awayClub} align="right" />
         </div>
       </div>
@@ -162,7 +354,6 @@ function MatchdayView() {
 
   const recentReports = save.matchReports.filter((r) => r.homeClubId === club.id || r.awayClubId === club.id).slice(-8).reverse();
 
-  // Predict lineup safely
   const matchRng = new RNG(save.seed, save.rngState);
   const selection = selectMatchdaySquad({
     club,
