@@ -209,7 +209,8 @@ function runHalf(state: MatchState, startMinute: number, endMinute: number): voi
     const actions = state.rng.int(5, 8);
     for (let i = 0; i < actions; i++) {
       simulatePossessionAction(state);
-      if (state.home.redCards >= 3 || state.away.redCards >= 3) return;
+      // 5 red cards = abandoned match (very rare)
+      if (state.home.redCards >= 5 || state.away.redCards >= 5) return;
     }
   }
 }
@@ -401,7 +402,6 @@ function resolveDribble(
     const defStats = getPlayerStats(defending, defender);
     if (defStats) defStats.tackles++;
     
-    // Drastically reduced foul chance (was 0.2 + 0.15)
     const foulChance = 0.06 + defending.tactic.pressIntensity * 0.06;
     if (state.rng.chance(foulChance)) {
       resolveFoul(state, defending, defender, carrier);
@@ -523,13 +523,12 @@ function resolveFoul(
   const defStats = getPlayerStats(defending, defender);
   if (defStats) defStats.foulsCommitted++;
 
-  // Adjusted card frequencies
   const severity = state.rng.next();
-  if (severity < 0.88) { // 88% chance it's just a standard foul
+  if (severity < 0.88) {
     pushEvent(state, state.minute, 'Foul', defending.club.id,
       defender.id, defender.displayName, victim.id, victim.displayName,
       `Foul by ${defender.displayName} on ${victim.displayName}.`);
-  } else if (severity < 0.99) { // 11% chance of a yellow card
+  } else if (severity < 0.99) {
     if (defStats) defStats.yellowCards++;
     defending.stats.yellowCards++;
     
@@ -546,7 +545,7 @@ function resolveFoul(
         defender.id, defender.displayName, victim.id, victim.displayName,
         `Yellow card for ${defender.displayName}.`);
     }
-  } else { // 1% chance of a straight red card
+  } else {
     if (defStats) defStats.redCards++;
     defending.stats.redCards++;
     defending.redCards++;
