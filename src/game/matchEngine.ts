@@ -395,12 +395,14 @@ function resolveDribble(
   if (state.rng.chance(successChance)) {
     if (carrierStats) carrierStats.dribblesCompleted++;
     state.possessionZone = advanceZone(state.possessionZone, 1);
-    state.lastPasser = null; // Dribbling breaks an assist chain
+    state.lastPasser = null; 
   } else {
     state.lastPasser = null;
     const defStats = getPlayerStats(defending, defender);
     if (defStats) defStats.tackles++;
-    const foulChance = 0.2 + defending.tactic.pressIntensity * 0.15;
+    
+    // Drastically reduced foul chance (was 0.2 + 0.15)
+    const foulChance = 0.06 + defending.tactic.pressIntensity * 0.06;
     if (state.rng.chance(foulChance)) {
       resolveFoul(state, defending, defender, carrier);
     } else {
@@ -521,12 +523,13 @@ function resolveFoul(
   const defStats = getPlayerStats(defending, defender);
   if (defStats) defStats.foulsCommitted++;
 
+  // Adjusted card frequencies
   const severity = state.rng.next();
-  if (severity < 0.65) {
+  if (severity < 0.88) { // 88% chance it's just a standard foul
     pushEvent(state, state.minute, 'Foul', defending.club.id,
       defender.id, defender.displayName, victim.id, victim.displayName,
       `Foul by ${defender.displayName} on ${victim.displayName}.`);
-  } else if (severity < 0.92) {
+  } else if (severity < 0.99) { // 11% chance of a yellow card
     if (defStats) defStats.yellowCards++;
     defending.stats.yellowCards++;
     
@@ -543,13 +546,13 @@ function resolveFoul(
         defender.id, defender.displayName, victim.id, victim.displayName,
         `Yellow card for ${defender.displayName}.`);
     }
-  } else {
+  } else { // 1% chance of a straight red card
     if (defStats) defStats.redCards++;
     defending.stats.redCards++;
     defending.redCards++;
     pushEvent(state, state.minute, 'RedCard', defending.club.id,
       defender.id, defender.displayName, victim.id, victim.displayName,
-      `RED CARD! ${defender.displayName} is sent off!`);
+      `STRAIGHT RED CARD! ${defender.displayName} is sent off!`);
     removeSentOffPlayer(state, defending, defender);
   }
 
@@ -884,18 +887,15 @@ function buildReport(
     }
   }
 
-  // Calculate ratings with match context
   for (const team of [state.home, state.away]) {
     const isHome = team.isHome;
     const teamGoals = isHome ? state.home.goals : state.away.goals;
     const oppGoals = isHome ? state.away.goals : state.home.goals;
     
-    // Result modifier: Winning is good, losing is bad
     let resultMod = 0;
     if (teamGoals > oppGoals) resultMod = 0.3;
     else if (teamGoals < oppGoals) {
       resultMod = -0.3;
-      // Heavy loss penalty
       if (oppGoals - teamGoals >= 3) resultMod -= 0.4;
     }
 
@@ -933,54 +933,43 @@ function computeRating(
   oppGoals: number,
   resultModifier: number
 ): number {
-  let rating = 6.5; // Baseline
+  let rating = 6.5;
 
-  // Attacking contributions
   rating += s.goals * 1.2;
   rating += s.assists * 0.8;
 
-  // Position specific logic
   const isDefender = s.position === 'GK' || s.position === 'CB' || s.position === 'RB' || s.position === 'LB';
   
   if (isDefender) {
-    if (oppGoals === 0 && s.minutesPlayed >= 60) rating += 0.5; // Clean sheet bonus
-    rating -= oppGoals * 0.2; // Penalty for every goal conceded
+    if (oppGoals === 0 && s.minutesPlayed >= 60) rating += 0.5;
+    rating -= oppGoals * 0.2;
     
-    // Defensive stats matter more for defenders
     rating += Math.min(s.tackles, 10) * 0.05;
     rating += Math.min(s.interceptions, 10) * 0.05;
     rating += Math.min(s.clearances, 10) * 0.03;
   } else {
-    // Defensive stats matter less for attackers
     rating += Math.min(s.tackles, 5) * 0.02;
     rating += Math.min(s.interceptions, 5) * 0.02;
   }
 
-  // Goalkeeper specific
   if (s.position === 'GK') {
     rating += s.saves * 0.15;
   }
 
-  // Playmaking
   rating += Math.min(s.keyPasses, 5) * 0.1;
 
-  // Passing accuracy (Reward high %, punish low %)
   if (s.passesAttempted > 10) {
     const acc = s.passesCompleted / s.passesAttempted;
     rating += (acc - 0.75) * 1.0; 
   }
 
-  // Dribbling
   rating += Math.min(s.dribblesCompleted, 5) * 0.05;
 
-  // Negative actions
   rating -= s.foulsCommitted * 0.05;
   rating -= s.yellowCards * 0.15;
   rating -= s.redCards * 1.5;
 
-  // Apply match context (Win/Loss)
   rating += resultModifier;
 
-  // Clamp between 1.0 and 9.9. No perfect 10s unless it's truly special.
   return clamp(round(rating, 1), 1.0, 9.9);
 }
