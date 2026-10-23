@@ -91,7 +91,6 @@ interface MatchState {
   phase: Phase;
   counterTeam: 'home' | 'away' | null;
   events: MatchEvent[];
-  // Assist tracking
   lastPasser: { clubId: string; player: Player; minute: number } | null;
   rng: RNG;
 }
@@ -170,9 +169,8 @@ function runHalf(state: MatchState, startMinute: number, endMinute: number): voi
     advanceMinute(state, endMinute);
     if (state.minute > endMinute) break;
 
-    // Real football has roughly 3-5 "meaningful" actions per minute (passes, dribbles, shots)
-    // Combined with the 90 minute clock, this creates the natural pacing.
-    const actions = state.rng.int(3, 6);
+    // 3-5 actions per minute max
+    const actions = state.rng.int(3, 5);
     for (let i = 0; i < actions; i++) {
       simulateAction(state);
       if (state.home.redCards >= 5 || state.away.redCards >= 5) return;
@@ -184,7 +182,8 @@ function advanceMinute(state: MatchState, limit: number): void {
   state.minute++;
   if (state.minute > limit) return;
 
-  if (state.rng.chance(0.018)) {
+  // Injury check (extremely rare)
+  if (state.rng.chance(0.01)) {
     const team = state.rng.chance(0.5) ? state.home : state.away;
     const victim = state.rng.pick(team.starters);
     if (victim && !victim.injury) {
@@ -194,7 +193,8 @@ function advanceMinute(state: MatchState, limit: number): void {
     }
   }
 
-  if (state.minute >= 55 && state.minute <= 85 && state.rng.chance(0.07)) {
+  // Manager subs
+  if (state.minute >= 55 && state.minute <= 85 && state.rng.chance(0.05)) {
     tryTacticalSub(state);
   }
 }
@@ -258,6 +258,9 @@ function chooseAction(
   const tactic = attacking.tactic;
   const fat = fatigueModifier(carrier);
 
+  // Hard limits on shots to prevent 50+ shot games
+  const shotsLimitReached = attacking.stats.shots > 25;
+
   const weights: Record<ActionType, number> = {
     shoot: 0, throughBall: 0, pass: 0, cross: 0, dribble: 0, clear: 0,
   };
@@ -271,10 +274,11 @@ function chooseAction(
     weights.pass = 0.55;
     weights.throughBall = 0.10 + tactic.directness * 0.15;
     weights.dribble = 0.15 * fat;
-    weights.shoot = 0.03 + shotBiasFromAttributes(carrier) * 0.02;
+    weights.shoot = shotsLimitReached ? 0 : (0.03 + shotBiasFromAttributes(carrier) * 0.02);
     weights.cross = 0.10;
   } else {
-    weights.shoot = 0.35 + shotBiasFromAttributes(carrier) * 0.15;
+    // Attack zone
+    weights.shoot = shotsLimitReached ? 0 : (0.35 + shotBiasFromAttributes(carrier) * 0.15);
     weights.cross = 0.20;
     weights.pass = 0.20;
     weights.throughBall = 0.10 * tactic.directness;
@@ -357,7 +361,6 @@ function resolvePass(
   if (carrierStats) carrierStats.passesCompleted++;
   attacking.stats.passesCompleted++;
 
-  // Assist tracking
   state.lastPasser = { clubId: attacking.club.id, player: carrier, minute: state.minute };
 
   state.zone[attackingKey] = advanceZone(state.zone[attackingKey]);
@@ -420,7 +423,6 @@ function resolveThroughBall(
   const targetStats = getPlayerStats(attacking, target);
   if (targetStats) targetStats.keyPasses++;
 
-  // Assist tracking
   state.lastPasser = { clubId: attacking.club.id, player: carrier, minute: state.minute };
 
   state.zone[attackingKey] = 'attack';
@@ -440,6 +442,12 @@ function resolveCross(
   carrier: Player,
   attackingKey: 'home' | 'away',
 ): void {
+  // Fix: Prevent infinite recursion of headers from corners
+  if (attacking.stats.corners > 15) {
+    resolvePass(state, attacking, defending, carrier, attackingKey);
+    return;
+  }
+
   const headers = attacking.starters.filter(
     (p) => p.id !== carrier.id && !p.injury && p.attributes.technical.heading > 50,
   );
@@ -470,7 +478,6 @@ function resolveCross(
     return;
   }
 
-  // Assist tracking
   state.lastPasser = { clubId: attacking.club.id, player: carrier, minute: state.minute };
 
   state.zone[attackingKey] = 'attack';
@@ -497,7 +504,7 @@ function resolveDribble(
   if (!defender) {
     if (carrierStats) carrierStats.dribblesCompleted++;
     state.zone[attackingKey] = advanceZone(state.zone[attackingKey]);
-    state.lastPasser = null; // Dribbling breaks an assist chain
+    state.lastPasser = null;
     return;
   }
 
@@ -554,13 +561,15 @@ function resolveShot(
   attackingKey: 'home' | 'away',
   opts: ShotOptions = {},
 ): void {
+  // Hard limit on total shots to prevent simulation blowups
+  if (attacking.stats.shots >= 30) return;
+
   const shooterStats = getPlayerStats(attacking, shooter);
   if (shooterStats) shooterStats.shots++;
   attacking.stats.shots++;
 
   const gk = findGK(defending);
   if (!gk) {
-    // No keeper — immediate goal
     scoreGoal(state, attacking, defending, shooter, null);
     return;
   }
@@ -571,7 +580,7 @@ function resolveShot(
 
   const longShot = zone === 'midfield' || (zone === 'attack' && state.rng.chance(0.15));
   const distance = longShot ? state.rng.float(20, 30) : state.rng.float(6, 18);
-  const angle = state.rng.float(0, 1); // 0 = central, 1 = tight angle
+  const angle = state.rng.float(0, 1);
 
   const finishing = shooter.attributes.technical.finishing * fatigue;
   const longShots = shooter.attributes.technical.longShots * fatigue;
@@ -584,7 +593,6 @@ function resolveShot(
       ? (longShots * 0.7 + finishing * 0.3)
       : (finishing * 0.7 + composure * 0.3);
 
-  // xG Calculation (Event-driven)
   let xg = 0.25;
   xg -= Math.max(0, distance - 8) * 0.012;
   xg -= angle * 0.15;
@@ -592,7 +600,6 @@ function resolveShot(
   xg += (shotSkill - 60) * 0.004;
   xg = clamp(xg, 0.01, 0.75);
 
-  // Add to total xG
   attacking.stats.expectedGoals += xg;
 
   const gkFatigue = fatigueModifier(gk);
@@ -608,7 +615,6 @@ function resolveShot(
     if (shooterStats) shooterStats.shotsOnTarget++;
     attacking.stats.shotsOnTarget++;
 
-    // Determine assist
     let assist: { player: Player } | null = null;
     if (state.lastPasser
       && state.lastPasser.clubId === attacking.club.id
@@ -619,7 +625,6 @@ function resolveShot(
 
     scoreGoal(state, attacking, defending, shooter, assist);
   } else if (roll < goalChance + 0.30) {
-    // Saved
     if (shooterStats) shooterStats.shotsOnTarget++;
     attacking.stats.shotsOnTarget++;
 
@@ -629,11 +634,14 @@ function resolveShot(
       gk.id, gk.displayName, shooter.id, shooter.displayName,
       `${gk.displayName} saves ${shooter.displayName}'s effort.`);
 
-    if (state.rng.chance(0.4)) {
+    // Only allow 1 corner per minute to prevent loops
+    if (state.rng.chance(0.3)) {
       attacking.stats.corners++;
       pushEvent(state, state.minute, 'Corner', attacking.club.id,
         null, null, null, null, `Corner for ${attacking.club.shortName}.`);
-      if (state.rng.chance(0.3)) {
+      
+      // Corner header chance
+      if (state.rng.chance(0.25) && attacking.stats.shots < 28) {
         const header = pickHeaderThreat(state.rng, attacking);
         if (header) {
           resolveShot(state, attacking, defending, header, attackingKey, { fromCross: true });
@@ -643,14 +651,12 @@ function resolveShot(
     state.lastPasser = null;
     flipPossession(state);
   } else if (roll < goalChance + 0.65) {
-    // Off target
     pushEvent(state, state.minute, 'ShotOffTarget', attacking.club.id,
       shooter.id, shooter.displayName, null, null,
       `${shooter.displayName} drags it wide.`);
     state.lastPasser = null;
     flipPossession(state);
   } else {
-    // Blocked
     const blocker = pickDefender(state, defending, shooter);
     if (blocker) {
       const bStats = getPlayerStats(defending, blocker);
@@ -702,7 +708,7 @@ function resolveCounter(
 
   const counterChance = clamp(0.4 + state.rng.float(0, 0.3), 0.3, 0.75);
 
-  if (state.rng.chance(counterChance)) {
+  if (state.rng.chance(counterChance) && attacking.stats.shots < 30) {
     pushEvent(state, state.minute, 'Chance', attacking.club.id,
       fastest.id, fastest.displayName, null, null,
       `COUNTER! ${fastest.displayName} breaks forward.`);
@@ -744,11 +750,11 @@ function resolveFoul(
   if (defStats) defStats.foulsCommitted++;
 
   const severity = state.rng.next();
-  if (severity < 0.88) {
+  if (severity < 0.92) {
     pushEvent(state, state.minute, 'Foul', defending.club.id,
       defender.id, defender.displayName, victim.id, victim.displayName,
       `Foul by ${defender.displayName} on ${victim.displayName}.`);
-  } else if (severity < 0.985) {
+  } else if (severity < 0.99) {
     if (defStats) defStats.yellowCards++;
     defending.stats.yellowCards++;
     if (defStats && defStats.yellowCards >= 2) {
